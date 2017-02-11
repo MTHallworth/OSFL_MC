@@ -1,7 +1,11 @@
+# Ignore this files
 .Rproj.user
 .Rhistory
 *.RData
 *.rds
+*.exe
+
+# Ignore these directories
 Spatial_Layers/
 Data/
 Packages/
