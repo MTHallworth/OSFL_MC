@@ -1,9 +1,10 @@
-# Ignore this files
+# Ignore these files
 .Rproj.user
 .Rhistory
 *.RData
 *.rds
 *.exe
+*.html
 
 # Ignore these directories
 Spatial_Layers/
