@@ -5,6 +5,8 @@
 *.rds
 *.exe
 *.html
+*.doc
+*.docx
 
 # Ignore these directories
 Spatial_Layers/
