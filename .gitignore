@@ -1,6 +1,10 @@
 .Rproj.user
 .Rhistory
-.RData
+*.RData
+*.rds
 Spatial_Layers/
 Data/
 Packages/
+Figures/
+Twilights/
+Results/
