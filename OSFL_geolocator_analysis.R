@@ -7,9 +7,7 @@ library(sp)
 library(SGAT)
 library(TwGeos)
 library(MASS)
-library(mth, lib.loc = "C:/Users/hallworthm/R_Library")
-#library(maptools)
-#library(FLightR)
+
 
 ## ----SpatialData, warning = FALSE, echo = FALSE--------------------------
 # Read in spatial layers 
@@ -45,7 +43,11 @@ E<-disaggregate(subset(Land, NAME == "Ecuador"))
 Ecuador <- E[14,]
 
 Land <- (subset(Land, NAME != "Ecuador"))
-Land<-(gUnion(Land,Ecuador))
+Land<-(rgeos::gUnion(Land,Ecuador))
+
+LandMask <- shapefile("Spatial_Layers/LandMask.shp")
+
+Land <- intersect(Land,LandMask)
 
 ## ----birdId--------------------------------------------------------------
 AncFiles <- list.files(path = "Data/Anchorage_recoveries",
@@ -213,9 +215,9 @@ twls <- vector('list',(nBirds+1))
 for(i in 1:(nBirds+1)){
 twls[[i]] <- twilightEdit(twilights = twlNew[[i]], 
              window = 4,           # two days before and two days after
-             outlier.mins = 45,    # difference in mins
+             outlier.mins = 30,    # difference in mins
              stationary.mins = 25, # are the other surrounding twilights within 25 mins of one another
-             plot = FALSE)
+             plot = TRUE)
 
 # Make sure to keep track of threshold
 twls[[i]]$Threshold <- twlNew[[i]]$threshold
@@ -240,7 +242,7 @@ twlEdit <- lapply(twlEdit,subset,Deleted == FALSE)
  birds <- c(BirdId,paste0(BirdId[4],"_Yr2"))
 ## 
  for(i in 1:(nBirds+1)){
- write.csv(twlEdit[[i]], paste0(birds[[i]],"_Threshold_Combined.csv"), row.names = FALSE)
+ write.csv(twlEdit[[i]], paste0("Twilights/",birds[[i]],"_Threshold_Combined.csv"), row.names = FALSE)
  }
 
 ## ----calibrartionDates---------------------------------------------------
@@ -358,7 +360,7 @@ twlEdit[[i]]$Zenith[which(twlEdit[[i]]$Threshold == 4)] <- 93.05437
 twlEdit[[1]] <- twlEdit[[1]][3:nrow(twlEdit[[1]]),]
 twlEdit[[2]] <- twlEdit[[2]][3:nrow(twlEdit[[2]]),]
 twlEdit[[3]] <- twlEdit[[3]][3:nrow(twlEdit[[3]]),]
-twlEdit[[8]] <- twlEdit[[8]][1:724,]
+twlEdit[[8]] <- twlEdit[[8]][1:695,]
 twlEdit[[15]] <- twlEdit[[15]][3:850,]
 twlEdit[[15]] <- twlEdit[[15]][complete.cases(twlEdit[[15]]),]
 twlEdit[[16]] <- twlEdit[[16]][7:nrow(twlEdit[[16]]),]
@@ -373,9 +375,9 @@ tolvalues[1,1]<-0.13
 tolvalues[2,1]<-0.1
 tolvalues[3,1]<-0.2
 tolvalues[4,1]<-0.17
-tolvalues[5,1]<-0.08
+tolvalues[5,1]<-0.102
 tolvalues[6,1]<-0.125
-tolvalues[7,1]<-0.13
+tolvalues[7,1]<-0.15
 tolvalues[8,1]<-0.1
 tolvalues[9,1]<-0.105
 tolvalues[10,1]<-0.2
@@ -393,7 +395,7 @@ tolvalues[3,2]<-0.2
 tolvalues[4,2]<-0.23
 tolvalues[5,2]<-0.19
 tolvalues[6,2]<-0.26
-tolvalues[7,2]<-0.15
+tolvalues[7,2]<-0.17
 tolvalues[8,2]<-0.2
 tolvalues[9,2]<-0.2
 tolvalues[10,2]<-0.165
@@ -416,27 +418,29 @@ for(i in 1:(nBirds+1)){
 
 
 ## ----pathsPlot, eval = FALSE, echo = FALSE-------------------------------
-## ## ----echo = FALSE, fig.cap="**Figure 5** The initial annual cycle path of Olive-sided Flycatchers captured breeding in Alaska - *blue* = Fall, *green* = Spring, *red vertical lines* spring and fall equniox"----
-## for(i in 1:(nBirds+1)){
-##   layout(matrix(c(1,3,
-##                   2,3), 2, 2, byrow = TRUE))
-##   par(mar=c(2,4,2,0))
-##   plot(path[[i]]$time, path[[i]]$x[, 2], type = "b", pch = 16, cex = 0.5, ylab = "Lat", xlab = '',xaxt="n")
-##   abline(h = ifelse(i != 16, CapLocs[i,2],CapLocs[4,2]))
-##   abline(v = as.POSIXct("2014-09-23"),col="red",lty=2,lwd=1.5)
-##   abline(v = as.POSIXct("2015-03-20"),col="red",lty=2,lwd=1.5)
-##   par(mar=c(2,4,2,0))
-##   plot(path[[i]]$time, path[[i]]$x[, 1], type = "b", pch = 16, cex = 0.5, ylab = "Lat", xlab = '')
-##   abline(h = ifelse(i != 16, CapLocs[i,1],CapLocs[4,1]))
-##   abline(v = as.POSIXct("2014-09-23"),col="red",lty=2,lwd=1.5)
-##   abline(v = as.POSIXct("2015-03-20"),col="red",lty=2,lwd=1.5)
+ ## ----echo = FALSE, fig.cap="**Figure 5** The initial annual cycle path of Olive-sided Flycatchers captured breeding in Alaska - *blue* = Fall, *green* = Spring, *red vertical lines* spring and fall equniox"----
+ for(i in 1:(nBirds+1)){
+  layout(matrix(c(1,3,
+                   2,3), 2, 2, byrow = TRUE))
+   par(mar=c(2,4,2,0))
+   plot(path[[i]]$time, path[[i]]$x[, 2], type = "b", pch = 16, cex = 0.5, ylab = "Lat", xlab = '',xaxt="n")
+   abline(h = ifelse(i != 16, CapLocs[i,2],CapLocs[4,2]))
+   abline(v = as.POSIXct("2014-09-23"),col="red",lty=2,lwd=1.5)
+   abline(v = as.POSIXct("2015-03-20"),col="red",lty=2,lwd=1.5)
+   par(mar=c(2,4,2,0))
+   plot(path[[i]]$time, path[[i]]$x[, 1], type = "b", pch = 16, cex = 0.5, ylab = "Lat", xlab = '')
+   abline(h = ifelse(i != 16, CapLocs[i,1],CapLocs[4,1]))
+   abline(v = as.POSIXct("2014-09-23"),col="red",lty=2,lwd=1.5)
+   abline(v = as.POSIXct("2015-03-20"),col="red",lty=2,lwd=1.5)
 ## 
 ## 
-##   plot(Americas, col = "grey95",xlim = c(-170,-60),ylim=c(0,65))
-##   box()
-##   lines(path[[i]]$x, col = "blue")
-##   points(path[[i]]$x, pch = 16, cex = 0.5, col = "blue")
-## }
+   plot(Americas, col = "grey95",xlim = c(-170,-60),ylim=c(0,65))
+   box()
+   lines(path[[i]]$x, col = "blue")
+   points(path[[i]]$x, pch = 16, cex = 0.5, col = "blue")
+
+Sys.sleep(5)
+ }
 
 ## ----intitalPaths--------------------------------------------------------
 x0 <- z0 <- fixedx <- vector('list',nBirds+1)
@@ -585,10 +589,9 @@ proposal.z[[i]] <- mvnorm(S=diag(c(0.0025,0.0025)),n=nlocation(z0[[i]]))
 ## 
 ## # Save the fit object #
 ## 
-## saveRDS(fit,paste0("OSFL_fit_",format(Sys.Date(),"%b_%d_%Y"),".rds"))
-.libPaths("C:/Users/hallworthm/OSFL_MC/Packages")
+saveRDS(fit,paste0("Data/MCMC_fit/OSFL_fit_",format(Sys.Date(),"%b_%d_%Y"),".rds"))
 
-fit <- readRDS("Data/MCMC_fit/OSFL_fit_Feb_11_2017.rds")
+#fit <- readRDS("Data/MCMC_fit/OSFL_fit_Feb_11_2017.rds")
 
 
 # This step makes an empty raster #
@@ -619,8 +622,7 @@ Sp[[i]] <- slices(type="primary",
                  right = FALSE)
 }
 
-sliceIndices(S[[1]])
-sliceInterval(S[[4]],k = c(2:5))
+
 ## Migration Schedules 
 
 May1 <- July <- Nov1<-Feb1<-rep(NA,(nBirds + 1))
@@ -644,7 +646,6 @@ Feb1[i]<-"2016-02-01"
 }
 May1[16] <- "2015-06-20"
 
-detach("package:mth", unload = TRUE)
 
 schedules <- vector('list',(nBirds+1))
 library(mth, lib.loc = "C:/Users/hallworthm/R_Library")
@@ -660,9 +661,10 @@ schedules[[i]]<- mth::MigSchedule(MCMC = S[[i]],
                              days.omit = 5)
 }
 
-```{r readSchedules, echo = FALSE}
-schedules <- readRDS("Schedules_Jan_27_2017.rds")
-```
+
+saveRDS(schedules, paste0("Data/MCMC_fit/OSFL_schedules_",format(Sys.Date(),"%b_%d_%Y"),".rds"))
+
+
 
 ## Further analyses 
 ```{r birdsuse}
