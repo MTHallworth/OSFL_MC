@@ -648,9 +648,10 @@ May1[16] <- "2015-06-20"
 
 
 schedules <- vector('list',(nBirds+1))
-library(mth, lib.loc = "C:/Users/hallworthm/R_Library")
+
+library(mth)
+
 for(i in 1:(nBirds+1)){
-i = 15
 schedules[[i]]<- mth::MigSchedule(MCMC = S[[i]], 
                              prob = 0.95, 
                              known.breed = c(May1[i],July[i]),
