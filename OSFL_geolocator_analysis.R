@@ -45,7 +45,11 @@ E<-disaggregate(subset(Land, NAME == "Ecuador"))
 Ecuador <- E[14,]
 
 Land <- (subset(Land, NAME != "Ecuador"))
-Land<-(gUnion(Land,Ecuador))
+Land <-(rgeos::gUnion(Land,Ecuador))
+
+LandMask <- shapefile("Spatial_Layers/LandMask.shp")
+
+Land <- crop(Land,LandMask)
 
 ## ----birdId--------------------------------------------------------------
 AncFiles <- list.files(path = "Data/Anchorage_recoveries",
@@ -240,7 +244,7 @@ twlEdit <- lapply(twlEdit,subset,Deleted == FALSE)
  birds <- c(BirdId,paste0(BirdId[4],"_Yr2"))
 ## 
  for(i in 1:(nBirds+1)){
- write.csv(twlEdit[[i]], paste0(birds[[i]],"_Threshold_Combined.csv"), row.names = FALSE)
+ write.csv(twlEdit[[i]], paste0("Twilights/",birds[[i]],"_Threshold_Combined.csv"), row.names = FALSE)
  }
 
 ## ----calibrartionDates---------------------------------------------------
@@ -546,8 +550,8 @@ proposal.z[[i]] <- mvnorm(S=diag(c(0.0025,0.0025)),n=nlocation(z0[[i]]))
   fit[[i]] <- estelleMetropolis(model = model[[i]],
                                 proposal.x = proposal.x[[i]],
                                 proposal.z = proposal.z[[i]],
-                                iters = 10000, # This value sets the number of iterations to run
-                                thin = 10,
+                                iters = 5000, # This value sets the number of iterations to run
+                                thin = 2,
                                 chains = 3)
 ## 
   xsum[[i]] <- locationSummary(fit[[i]]$x,collapse = TRUE)
@@ -561,8 +565,8 @@ proposal.z[[i]] <- mvnorm(S=diag(c(0.0025,0.0025)),n=nlocation(z0[[i]]))
                                 proposal.z = proposal.z[[i]],
                                 x0 = cbind(xsum[[i]]$'Lon.50%',xsum[[i]]$'Lat.50%'),
                                 z0 = cbind(zsum[[i]]$'Lon.50%',zsum[[i]]$'Lat.50%'),
-                                iters=10000, # This value sets the number of iterations to run
-                                thin= 10,
+                                iters=5000, # This value sets the number of iterations to run
+                                thin= 2,
                                 chains=3)
 ## 
 ## # Final Run
@@ -578,17 +582,17 @@ proposal.z[[i]] <- mvnorm(S=diag(c(0.0025,0.0025)),n=nlocation(z0[[i]]))
                                 proposal.z = proposal.z[[i]],
                                 x0=cbind(xsum[[i]]$'Lon.50%',xsum[[i]]$'Lat.50%'),
                                 z0=cbind(zsum[[i]]$'Lon.50%',zsum[[i]]$'Lat.50%'),
-                                iters=10000,  # This value sets the number of iterations to run
-                                thin = 10,
+                                iters=5000,  # This value sets the number of iterations to run
+                                thin = 2,
                                 chains=3)
  }
 ## 
 ## # Save the fit object #
 ## 
-## saveRDS(fit,paste0("OSFL_fit_",format(Sys.Date(),"%b_%d_%Y"),".rds"))
+# saveRDS(fit,paste0("OSFL_fit_",format(Sys.Date(),"%b_%d_%Y"),".rds"))
 .libPaths("C:/Users/hallworthm/OSFL_MC/Packages")
 
-fit <- readRDS("Data/MCMC_fit/OSFL_fit_Feb_11_2017.rds")
+#fit <- readRDS("Data/MCMC_fit/OSFL_fit_Feb_11_2017.rds")
 
 
 # This step makes an empty raster #
@@ -619,8 +623,7 @@ Sp[[i]] <- slices(type="primary",
                  right = FALSE)
 }
 
-sliceIndices(S[[1]])
-sliceInterval(S[[4]],k = c(2:5))
+
 ## Migration Schedules 
 
 May1 <- July <- Nov1<-Feb1<-rep(NA,(nBirds + 1))
@@ -644,12 +647,10 @@ Feb1[i]<-"2016-02-01"
 }
 May1[16] <- "2015-06-20"
 
-detach("package:mth", unload = TRUE)
 
 schedules <- vector('list',(nBirds+1))
 library(mth, lib.loc = "C:/Users/hallworthm/R_Library")
 for(i in 1:(nBirds+1)){
-i = 15
 schedules[[i]]<- mth::MigSchedule(MCMC = S[[i]], 
                              prob = 0.95, 
                              known.breed = c(May1[i],July[i]),
@@ -659,6 +660,8 @@ schedules[[i]]<- mth::MigSchedule(MCMC = S[[i]],
                              rm.lat.equinox = TRUE, 
                              days.omit = 5)
 }
+
+str(schedules,1)
 
 ```{r readSchedules, echo = FALSE}
 schedules <- readRDS("Schedules_Jan_27_2017.rds")
