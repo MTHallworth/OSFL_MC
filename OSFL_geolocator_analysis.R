@@ -4,10 +4,12 @@
 
 library(raster)
 library(sp)
-library(SGAT)
 library(TwGeos)
 library(MASS)
-
+library(mth, lib.loc = "C:/Users/hallworthm/R_Library")
+library(SGAT)
+#library(maptools)
+#library(FLightR)
 
 ## ----SpatialData, warning = FALSE, echo = FALSE--------------------------
 # Read in spatial layers 
@@ -43,19 +45,11 @@ E<-disaggregate(subset(Land, NAME == "Ecuador"))
 Ecuador <- E[14,]
 
 Land <- (subset(Land, NAME != "Ecuador"))
-<<<<<<< HEAD
 Land <-(rgeos::gUnion(Land,Ecuador))
 
 LandMask <- shapefile("Spatial_Layers/LandMask.shp")
 
-Land <- crop(Land,LandMask)
-=======
-Land<-(rgeos::gUnion(Land,Ecuador))
-
-LandMask <- shapefile("Spatial_Layers/LandMask.shp")
-
-Land <- intersect(Land,LandMask)
->>>>>>> 5465672159774a533df6add414baf421aec017fd
+Land <- crop(LandMask,Land)
 
 ## ----birdId--------------------------------------------------------------
 AncFiles <- list.files(path = "Data/Anchorage_recoveries",
@@ -136,7 +130,7 @@ seed <- as.POSIXct(c(rep("2014-01-01 04:00:00",3),
 
 ## ------------------------------------------------------------------------
 # Create an empty list to store the results
-twl <- vector('list',nBirds)
+twl <- vector('list',nBirds+1)
 
 # Loop through the files and assign twilights using a threshold value of 1. 
 
@@ -153,16 +147,24 @@ twl[[4]] <- findTwilights(tagdata = OSFLdata[[4]],
                           include = c(seed[4],seed[nBirds]),
                           dark.min = 0) # 0 hours minimum dark period
 
-## ----twlight_example, echo = FALSE---------------------------------------
-twl_ex <- findTwilights(tagdata = OSFLdata[[1]],
-                          threshold = 1,
-                          include = seed[1],
-                          dark.min = 0)
-head(twl_ex)
+twl[[16]] <- twl[[4]][595:nrow(twl[[4]]),]
+twl[[4]] <- twl[[4]][1:594,]
+
+
+for(i in 1:(nBirds+1)){
+twl[[i]] <- twilightEdit(twilights = twl[[i]], 
+                           window = 4,           # two days before and two days after
+                           outlier.mins = 45,    # difference in mins
+                           stationary.mins = 25, # are the other surrounding twilights within 25 mins of one another
+                           plot = FALSE)
+}
+
+twl <- Map(cbind, twl, threshold = 1)
+
 
 ## ------------------------------------------------------------------------
 # Create an empty list to store the results
-twl_Ext <-twl_Edit2<- vector('list',nBirds)
+twl_Ext <-twl_Edit2<- vector('list',(nBirds+1))
 
 for(i in 1:nBirds){
   twl_Ext[[i]] <- findTwilights(tagdata = OSFLdata[[i]],
@@ -172,15 +174,22 @@ for(i in 1:nBirds){
 }
 
 # K288 has two years worth of data, therefore we need to set two seeds for that bird
-twl_Ext[[4]] <- findTwilights(tagdata = OSFLdata[[4]],
+twl_Ext4 <- findTwilights(tagdata = OSFLdata[[4]],
                               threshold = 4,
                               include = c(seed[4],seed[nBirds]),
                               dark.min = 0) # 0 hours minimum dark period
 
+twl_Ext[[16]] <- twl_Ext4[701:nrow(twl_Ext[[4]]),]
+twl_Ext[[4]] <- twl_Ext4[1:700,]
 
+for(i in 1:(nBirds+1)){
+twl_Ext[[i]] <- twilightEdit(twilights = twl_Ext[[i]], 
+             		    window = 4,           # two days before and two days after
+                            outlier.mins = 45,    # difference in mins
+                            stationary.mins = 25, # are the other surrounding twilights within 25 mins of one another
+                            plot = FALSE)
+}
 
-## ------------------------------------------------------------------------
-twl <- Map(cbind, twl, threshold = 1)
 twl_Ext <- Map(cbind, twl_Ext, threshold = 4)
 
 ## ------------------------------------------------------------------------
@@ -201,35 +210,35 @@ twlNew[[i]] <- rbind(twlNew[[i]], newRows)
 if(i == 4){
 newRows <- subset(twl_Ext[[4]],twl_Ext[[4]][,1] < twl[[4]][1,1])
 
-twlNew[[4]] <- rbind(newRows, twl[[4]][1:594,])
+twlNew[[4]] <- rbind(newRows, twl[[4]])
 
-newRows <- subset(twl_Ext[[4]], (twl_Ext[[4]][,1] > twl[[4]][594,1] & 
-                                 twl_Ext[[4]][,1] < as.POSIXct("2015-06-18",tz = "GMT")))
+newRows <- subset(twl_Ext[[4]], (twl_Ext[[4]][,1] > twl[[4]][nrow(twl[[4]]),1] & 
+                                 twl_Ext[[4]][,1] < as.POSIXct("2015-06-21",tz = "GMT")))
 
 twlNew[[4]] <- rbind(twlNew[[4]],newRows)
 }
 
 if(i == 16){
-newRows <- subset(twl_Ext[[4]],(twl_Ext[[4]][,1] > as.POSIXct("2015-06-20",tz = "GMT") &
-                                twl_Ext[[4]][,1] < as.POSIXct("2015-07-24",tz = "GMT")))
+newRows <- subset(twl_Ext[[16]],(twl_Ext[[16]][,1] > as.POSIXct("2015-06-20",tz = "GMT") &
+                                twl_Ext[[16]][,1] < twl[[16]][1,1]))
 
-twlNew[[16]] <- rbind(newRows, twl[[4]][595:nrow(twl[[4]]),])
+twlNew[[16]] <- rbind(newRows, twl[[16]])
 }
 }
 
 ## ------------------------------------------------------------------------
-twls <- vector('list',(nBirds+1))
+#twls <- vector('list',(nBirds+1))
 
-for(i in 1:(nBirds+1)){
-twls[[i]] <- twilightEdit(twilights = twlNew[[i]], 
-             window = 4,           # two days before and two days after
-             outlier.mins = 30,    # difference in mins
-             stationary.mins = 25, # are the other surrounding twilights within 25 mins of one another
-             plot = TRUE)
+#for(i in 1:(nBirds+1)){
+#twls[[i]] <- twilightEdit(twilights = twlNew[[i]], 
+#             window = 4,           # two days before and two days after
+#             outlier.mins = 45,    # difference in mins
+#             stationary.mins = 25, # are the other surrounding twilights within 25 mins of one another
+#             plot = FALSE)
 
 # Make sure to keep track of threshold
-twls[[i]]$Threshold <- twlNew[[i]]$threshold
-}
+#twls[[i]]$Threshold <- twlNew[[i]]$threshold
+#}
 
 # ## ----exampleTWlEdit, echo = FALSE, fig.cap= "Red dots = Sunset, blue = Sunrise, arrows indicate the transtions that were moved and X represents transitions that were removed."----
 # twlEdit2 <- twilightEdit(twilights = twl_ex, 
@@ -242,12 +251,22 @@ twls[[i]]$Threshold <- twlNew[[i]]$threshold
 # head(twls[[1]])
 
 ## ----adjusttime----------------------------------------------------------
-twlEdit <- lapply(X = twls, FUN = twilightAdjust, interval = 300)
+twlEdit <- lapply(X = twlNew, FUN = twilightAdjust, interval = 300)
 
 twlEdit <- lapply(twlEdit,subset,Deleted == FALSE)
 
+for(i in 1:(nBirds+1)){
+lightImage(OSFLdata[[i]], zlim = c(0,5),offset = 19)
+tsimagePoints(twlEdit[[i]]$Twilight, 
+              offset = 12, 
+              pch = 16, 
+              cex = 0.5,
+              col = ifelse(twlEdit[[i]]$Rise, "dodgerblue", "firebrick"))
+}
+
 ## ----saveresults, eval = FALSE-------------------------------------------
  birds <- c(BirdId,paste0(BirdId[4],"_Yr2"))
+
 ## 
  for(i in 1:(nBirds+1)){
  write.csv(twlEdit[[i]], paste0("Twilights/",birds[[i]],"_Threshold_Combined.csv"), row.names = FALSE)
@@ -356,21 +375,21 @@ for(i in 1:(nBirds+1)){
 twlEdit[[i]]$Zenith <- NA
 
 # assign the appropriate zenith angle 
-twlEdit[[i]]$Zenith[which(twlEdit[[i]]$Threshold == 1)] <- 95.76416
+twlEdit[[i]]$Zenith[which(twlEdit[[i]]$threshold == 1)] <- 95.76416
 
 # calculation of zenith angle for threshold of 4 is not shown 
 # but was conducted in the same manner as above.
 
-twlEdit[[i]]$Zenith[which(twlEdit[[i]]$Threshold == 4)] <- 93.05437
+twlEdit[[i]]$Zenith[which(twlEdit[[i]]$threshold == 4)] <- 93.05437
 }
 
 ## ----scrubtwl, echo = FALSE----------------------------------------------
 twlEdit[[1]] <- twlEdit[[1]][3:nrow(twlEdit[[1]]),]
 twlEdit[[2]] <- twlEdit[[2]][3:nrow(twlEdit[[2]]),]
 twlEdit[[3]] <- twlEdit[[3]][3:nrow(twlEdit[[3]]),]
-twlEdit[[8]] <- twlEdit[[8]][1:695,]
-twlEdit[[15]] <- twlEdit[[15]][3:850,]
-twlEdit[[15]] <- twlEdit[[15]][complete.cases(twlEdit[[15]]),]
+twlEdit[[4]] <- twlEdit[[4]][1:(nrow(twlEdit[[4]])-8),]
+twlEdit[[8]] <- twlEdit[[8]][1:724,]
+twlEdit[[15]] <- twlEdit[[15]][3:(nrow(twlEdit[[15]])-4),]
 twlEdit[[16]] <- twlEdit[[16]][7:nrow(twlEdit[[16]]),]
 
 ## ----setTols-------------------------------------------------------------
@@ -380,75 +399,74 @@ tolvalues[,2]<-0.08
 
 # Manual adjustments for Fall Equinox period 
 tolvalues[1,1]<-0.13
-tolvalues[2,1]<-0.1
+tolvalues[2,1]<-0.101
 tolvalues[3,1]<-0.2
 tolvalues[4,1]<-0.17
-tolvalues[5,1]<-0.102
-tolvalues[6,1]<-0.125
-tolvalues[7,1]<-0.15
-tolvalues[8,1]<-0.1
+tolvalues[5,1]<-0.22
+tolvalues[6,1]<-0.2
+tolvalues[7,1]<-0.168
+tolvalues[8,1]<-0.195
 tolvalues[9,1]<-0.105
 tolvalues[10,1]<-0.2
 tolvalues[11,1]<-0.115
 tolvalues[12,1]<-0.13
 tolvalues[13,1]<-0.165
-tolvalues[14,1]<-0.13
-tolvalues[15,1]<-0.15
-tolvalues[16,1]<-0.17
+tolvalues[14,1]<-0.185
+tolvalues[15,1]<-0.215
+tolvalues[16,1]<-0.23
 
 # Manual adjustments for Spring Equinox period 
-tolvalues[1,2]<-0.16
-tolvalues[2,2]<-0.2
+tolvalues[1,2]<-0.275
+tolvalues[2,2]<-0.239
 tolvalues[3,2]<-0.2
 tolvalues[4,2]<-0.23
-tolvalues[5,2]<-0.19
-tolvalues[6,2]<-0.26
-tolvalues[7,2]<-0.17
+tolvalues[5,2]<-0.22
+tolvalues[6,2]<-0.27
+tolvalues[7,2]<-0.2285
 tolvalues[8,2]<-0.2
 tolvalues[9,2]<-0.2
-tolvalues[10,2]<-0.165
+tolvalues[10,2]<-0.162
 tolvalues[11,2]<-0.188
 tolvalues[12,2]<-0.17
-tolvalues[13,2]<-0.168
-tolvalues[14,2]<-0.14
-tolvalues[15,2]<-0.15
-tolvalues[16,2]<-0.18
+tolvalues[13,2]<-0.22
+tolvalues[14,2]<-0.24
+tolvalues[15,2]<-0.2
+tolvalues[16,2]<-0.22
 
 ## ----estPath-------------------------------------------------------------
 path <- vector('list',nBirds+1)
 
 for(i in 1:(nBirds+1)){  
-   path[[i]] <- thresholdPath(twilight = twlEdit[[i]]$Twilight,
+   path[[i]] <- SGAT::thresholdPath(twilight = twlEdit[[i]]$Twilight,
                              rise = twlEdit[[i]]$Rise,
                              zenith = twlEdit[[i]]$Zenith,
                              tol = tolvalues[i,])
 }
-
-
+#warnings()
+i = 16
 ## ----pathsPlot, eval = FALSE, echo = FALSE-------------------------------
- ## ----echo = FALSE, fig.cap="**Figure 5** The initial annual cycle path of Olive-sided Flycatchers captured breeding in Alaska - *blue* = Fall, *green* = Spring, *red vertical lines* spring and fall equniox"----
- for(i in 1:(nBirds+1)){
-  layout(matrix(c(1,3,
-                   2,3), 2, 2, byrow = TRUE))
-   par(mar=c(2,4,2,0))
-   plot(path[[i]]$time, path[[i]]$x[, 2], type = "b", pch = 16, cex = 0.5, ylab = "Lat", xlab = '',xaxt="n")
-   abline(h = ifelse(i != 16, CapLocs[i,2],CapLocs[4,2]))
-   abline(v = as.POSIXct("2014-09-23"),col="red",lty=2,lwd=1.5)
-   abline(v = as.POSIXct("2015-03-20"),col="red",lty=2,lwd=1.5)
-   par(mar=c(2,4,2,0))
-   plot(path[[i]]$time, path[[i]]$x[, 1], type = "b", pch = 16, cex = 0.5, ylab = "Lat", xlab = '')
-   abline(h = ifelse(i != 16, CapLocs[i,1],CapLocs[4,1]))
-   abline(v = as.POSIXct("2014-09-23"),col="red",lty=2,lwd=1.5)
-   abline(v = as.POSIXct("2015-03-20"),col="red",lty=2,lwd=1.5)
+## ## ----echo = FALSE, fig.cap="**Figure 5** The initial annual cycle path of Olive-sided Flycatchers captured breeding in Alaska - *blue* = Fall, *green* = Spring, *red vertical lines* spring and fall equniox"----
+#for(i in 1:(nBirds+1)){
+    layout(matrix(c(1,3,
+                    2,3), 2, 2, byrow = TRUE))
+ par(mar=c(2,4,2,0))
+ plot(path[[i]]$time, path[[i]]$x[, 2], type = "b", pch = 16, cex = 0.5, ylab = "Lat", xlab = '',xaxt="n")
+ abline(h = ifelse(i != 16, CapLocs[i,2],CapLocs[4,2]))
+ abline(v = as.POSIXct("2014-09-23"),col="red",lty=2,lwd=1.5)
+ abline(v = as.POSIXct("2015-03-20"),col="red",lty=2,lwd=1.5)
+ par(mar=c(2,4,2,0))
+ plot(path[[i]]$time, path[[i]]$x[, 1], type = "b", pch = 16, cex = 0.5, ylab = "Lat", xlab = '')
+ abline(h = ifelse(i != 16, CapLocs[i,1],CapLocs[4,1]))
+ abline(v = as.POSIXct("2014-09-23"),col="red",lty=2,lwd=1.5)
+ abline(v = as.POSIXct("2015-03-20"),col="red",lty=2,lwd=1.5)
 ## 
 ## 
-   plot(Americas, col = "grey95",xlim = c(-170,-60),ylim=c(0,65))
-   box()
-   lines(path[[i]]$x, col = "blue")
-   points(path[[i]]$x, pch = 16, cex = 0.5, col = "blue")
-
-Sys.sleep(5)
- }
+ plot(Americas, col = "grey95",xlim = c(-170,-60),ylim=c(0,65))
+ box()
+ lines(path[[i]]$x, col = "blue")
+ points(path[[i]]$x, pch = 16, cex = 0.5, col = "blue")
+#Sys.sleep(2)
+#}
 
 ## ----intitalPaths--------------------------------------------------------
 x0 <- z0 <- fixedx <- vector('list',nBirds+1)
@@ -542,7 +560,7 @@ model[[i]]<- thresholdModel(twilight = twlEdit[[i]]$Twilight,
                             zenith = twlEdit[[i]]$Zenith)
 }
 
-
+# saveRDS(model,"OSFL_model.rds")
 ## ----error.def-----------------------------------------------------------
 proposal.x <- proposal.z <- vector('list',nBirds+1)
 
@@ -555,11 +573,12 @@ proposal.z[[i]] <- mvnorm(S=diag(c(0.0025,0.0025)),n=nlocation(z0[[i]]))
   fit <- xsum <- zsum <- vector('list', nBirds+1)
  
   for(i in 1:(nBirds+1)){
+  cat("\n", BirdId[i],"\n")
   fit[[i]] <- estelleMetropolis(model = model[[i]],
                                 proposal.x = proposal.x[[i]],
                                 proposal.z = proposal.z[[i]],
                                 iters = 5000, # This value sets the number of iterations to run
-                                thin = 2,
+                                thin = 5,
                                 chains = 3)
 ## 
   xsum[[i]] <- locationSummary(fit[[i]]$x,collapse = TRUE)
@@ -573,8 +592,8 @@ proposal.z[[i]] <- mvnorm(S=diag(c(0.0025,0.0025)),n=nlocation(z0[[i]]))
                                 proposal.z = proposal.z[[i]],
                                 x0 = cbind(xsum[[i]]$'Lon.50%',xsum[[i]]$'Lat.50%'),
                                 z0 = cbind(zsum[[i]]$'Lon.50%',zsum[[i]]$'Lat.50%'),
-                                iters=5000, # This value sets the number of iterations to run
-                                thin= 2,
+                                iters= 5000, # This value sets the number of iterations to run
+                                thin= 5,
                                 chains=3)
 ## 
 ## # Final Run
@@ -590,21 +609,16 @@ proposal.z[[i]] <- mvnorm(S=diag(c(0.0025,0.0025)),n=nlocation(z0[[i]]))
                                 proposal.z = proposal.z[[i]],
                                 x0=cbind(xsum[[i]]$'Lon.50%',xsum[[i]]$'Lat.50%'),
                                 z0=cbind(zsum[[i]]$'Lon.50%',zsum[[i]]$'Lat.50%'),
-                                iters=5000,  # This value sets the number of iterations to run
-                                thin = 2,
+                                iters=10000,  # This value sets the number of iterations to run
+                                thin = 10,
                                 chains=3)
  }
 ## 
 ## # Save the fit object #
 ## 
-<<<<<<< HEAD
-# saveRDS(fit,paste0("OSFL_fit_",format(Sys.Date(),"%b_%d_%Y"),".rds"))
-.libPaths("C:/Users/hallworthm/OSFL_MC/Packages")
-=======
-saveRDS(fit,paste0("Data/MCMC_fit/OSFL_fit_",format(Sys.Date(),"%b_%d_%Y"),".rds"))
->>>>>>> 5465672159774a533df6add414baf421aec017fd
+#saveRDS(fit,paste0("OSFL_fit_",format(Sys.Date(),"%b_%d_%Y"),".rds"))
 
-#fit <- readRDS("Data/MCMC_fit/OSFL_fit_Feb_11_2017.rds")
+#fit <- readRDS("OSFL_fit_Mar_07_2017.rds")
 
 
 # This step makes an empty raster #
@@ -662,7 +676,8 @@ May1[16] <- "2015-06-20"
 
 schedules <- vector('list',(nBirds+1))
 
-library(mth)
+detach("package:mth", unload = TRUE)
+library(mth, lib.loc = "C:/Users/hallworthm/R_Library")
 
 for(i in 1:(nBirds+1)){
 schedules[[i]]<- mth::MigSchedule(MCMC = S[[i]], 
@@ -672,21 +687,15 @@ schedules[[i]]<- mth::MigSchedule(MCMC = S[[i]],
                              plot = TRUE,
                              plot.legend = FALSE,
                              rm.lat.equinox = TRUE, 
-                             days.omit = 5)
+                             days.omit = 5,
+                             latAllow = c(0,5))
 }
 
-<<<<<<< HEAD
-str(schedules,1)
+saveRDS(schedules,paste0("Schedules_",format(Sys.Date(),"%b_%d_%Y"),".rds")
 
 ```{r readSchedules, echo = FALSE}
 schedules <- readRDS("Schedules_Jan_27_2017.rds")
 ```
-=======
-
-saveRDS(schedules, paste0("Data/MCMC_fit/OSFL_schedules_",format(Sys.Date(),"%b_%d_%Y"),".rds"))
-
-
->>>>>>> 5465672159774a533df6add414baf421aec017fd
 
 ## Further analyses 
 ```{r birdsuse}
