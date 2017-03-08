@@ -1,13 +1,19 @@
 ---
 title: "OSFL geolocator analysis"
 author: "Michael T. Hallworth"
-date:  
-output: html_document
+date: "null"
+output:
+  html_document:
+    fig_caption: yes
+    force_captions: yes
+    highlight: pygments
+    theme: journal
+  pdf_document: default
 ---
 
 ```{r global_options, include = FALSE}
 library(knitr)
-opts_chunk$set(warning = FALSE)
+opts_chunk$set(warning = FALSE, tidy = TRUE)
 ```
 
 ```{r packages, include=FALSE, message = FALSE, waring = FALSE}
@@ -17,8 +23,8 @@ library(raster)
 library(sp)
 library(rgeos)
 library(geosphere)
-library(SGAT)
 library(TwGeos)
+library(SGAT)
 library(MASS)
 library(maptools)
 library(FLightR)
@@ -80,8 +86,13 @@ E<-disaggregate(subset(Land, NAME == "Ecuador"))
 
 Ecuador <- E[14,]
 
+
 Land <- (subset(Land, NAME != "Ecuador"))
-Land<-(gUnion(Land,Ecuador))
+Land <-(rgeos::gUnion(Land,Ecuador))
+
+LandMask <- shapefile("Spatial_Layers/LandMask.shp")
+
+Land <- crop(LandMask,Land)
 ```
 
 ### Read in the data files (.lux) 
@@ -124,6 +135,8 @@ BirdId <- substr(x = BirdId,
 
 # Determine the number of birds
 nBirds<-length(BirdId)
+
+BirdId <- c(BirdId,paste0(BirdId[4],"_Yr2"))
 ```
 
 ### Loop through all the files and read them in as LUX files #
@@ -182,7 +195,7 @@ points(as.POSIXct("2014-01-01",format = "%Y-%m-%d",tz = "GMT"), 24+4, col = "red
 ## Assigning twilights
 ```{r}
 # Create an empty list to store the results
-twl <- vector('list',nBirds)
+twl <- vector('list',nBirds+1)
 
 # Loop through the files and assign twilights using a threshold value of 1. 
 
@@ -198,6 +211,12 @@ twl[[4]] <- findTwilights(tagdata = OSFLdata[[4]],
                           threshold = 1,
                           include = c(seed[4],seed[nBirds]),
                           dark.min = 0) # 0 hours minimum dark period
+
+# Save year K288's second year separately
+twl[[16]] <- twl[[4]][595:nrow(twl[[4]]),]
+
+# Keep only the first year for K288 
+twl[[4]] <- twl[[4]][1:594,]
 ```
 
 ```{r twlight_example, echo = FALSE}
@@ -208,11 +227,25 @@ twl_ex <- findTwilights(tagdata = OSFLdata[[1]],
 head(twl_ex)
 ```
 
+### Edit the transitions
+```{r}
+for(i in 1:(nBirds+1)){
+twl[[i]] <- twilightEdit(twilights = twl[[i]], 
+                           window = 4,           # two days before and two days after
+                           outlier.mins = 45,    # difference in mins
+                           stationary.mins = 25, # edit if consecutive twilights (window) within x mins
+                           plot = FALSE)
+}
+
+# Keep track of the threshold used to assign twilights
+twl <- Map(cbind, twl, threshold = 1)
+```
+
 ### Higher threshold to extend into arctic 
 
 ```{r}
 # Create an empty list to store the results
-twl_Ext <-twl_Edit2<- vector('list',nBirds)
+twl_Ext <- vector('list',(nBirds+1))
 
 for(i in 1:nBirds){
   twl_Ext[[i]] <- findTwilights(tagdata = OSFLdata[[i]],
@@ -222,24 +255,37 @@ for(i in 1:nBirds){
 }
 
 # K288 has two years worth of data, therefore we need to set two seeds for that bird
-twl_Ext[[4]] <- findTwilights(tagdata = OSFLdata[[4]],
+twl_Ext4 <- findTwilights(tagdata = OSFLdata[[4]],
                               threshold = 4,
                               include = c(seed[4],seed[nBirds]),
                               dark.min = 0) # 0 hours minimum dark period
 
+# Save year K288's second year separately
+twl_Ext[[16]] <- twl_Ext4[701:nrow(twl_Ext[[4]]),]
 
+# Keep only the first year for K288 
+twl_Ext[[4]] <- twl_Ext4[1:700,]
 ```
 
-## Combine the datasets
-
-### Keeping track of the threshold used to assign twilights
+### Edit the transitions
 ```{r}
-twl <- Map(cbind, twl, threshold = 1)
+for(i in 1:(nBirds+1)){
+twl_Ext[[i]] <- twilightEdit(twilights = twl_Ext[[i]], 
+             		            window = 4,           # two days before and two days after
+                            outlier.mins = 45,    # difference in mins
+                            stationary.mins = 25, # edit if consecutive twilights (window) within x mins
+                            plot = FALSE)
+}
+
+# Keep track of threshold used to determine twilights
 twl_Ext <- Map(cbind, twl_Ext, threshold = 4)
-``` 
+```
 
-here we combine the datasets 
+## Combine the data sets
+
+here we combine the data sets 
 ```{r}
+## ------------------------------------------------------------------------
 twlNew <- twls <- vector('list',(nBirds+1))
 
 for(i in 1:(nBirds+1)){
@@ -257,39 +303,23 @@ twlNew[[i]] <- rbind(twlNew[[i]], newRows)
 if(i == 4){
 newRows <- subset(twl_Ext[[4]],twl_Ext[[4]][,1] < twl[[4]][1,1])
 
-twlNew[[4]] <- rbind(newRows, twl[[4]][1:594,])
+twlNew[[4]] <- rbind(newRows, twl[[4]])
 
-newRows <- subset(twl_Ext[[4]], (twl_Ext[[4]][,1] > twl[[4]][594,1] & 
-                                 twl_Ext[[4]][,1] < as.POSIXct("2015-06-18",tz = "GMT")))
+newRows <- subset(twl_Ext[[4]], (twl_Ext[[4]][,1] > twl[[4]][nrow(twl[[4]]),1] & 
+                                 twl_Ext[[4]][,1] < as.POSIXct("2015-06-21",tz = "GMT")))
 
 twlNew[[4]] <- rbind(twlNew[[4]],newRows)
 }
 
 if(i == 16){
-newRows <- subset(twl_Ext[[4]],(twl_Ext[[4]][,1] > as.POSIXct("2015-06-20",tz = "GMT") &
-                                twl_Ext[[4]][,1] < as.POSIXct("2015-07-24",tz = "GMT")))
+newRows <- subset(twl_Ext[[16]],(twl_Ext[[16]][,1] > as.POSIXct("2015-06-20",tz = "GMT") &
+                                twl_Ext[[16]][,1] < twl[[16]][1,1]))
 
-twlNew[[16]] <- rbind(newRows, twl[[4]][595:nrow(twl[[4]]),])
+twlNew[[16]] <- rbind(newRows, twl[[16]])
 }
 }
 ``` 
 
-### Edit the transitions 
-
-```{r}
-twls <- vector('list',(nBirds+1))
-
-for(i in 1:(nBirds+1)){
-twls[[i]] <- twilightEdit(twilights = twlNew[[i]], 
-             window = 4,           # two days before and two days after
-             outlier.mins = 45,    # difference in mins
-             stationary.mins = 25, # are the other surrounding twilights within 25 mins of one another
-             plot = FALSE)
-
-# Make sure to keep track of threshold
-twls[[i]]$Threshold <- twlNew[[i]]$threshold
-}
-```
 
 ```{r exampleTWlEdit, echo = FALSE, fig.cap= "Red dots = Sunset, blue = Sunrise, arrows indicate the transtions that were moved and X represents transitions that were removed."}
 twlEdit2 <- twilightEdit(twilights = twl_ex, 
@@ -309,9 +339,18 @@ head(twls[[1]])
 
 ### Adjust the sunset times and remove transitions labeled deleted
 ```{r adjusttime}
-twlEdit <- lapply(X = twls, FUN = twilightAdjust, interval = 300)
+twlEdit <- lapply(X = twlNew, FUN = twilightAdjust, interval = 300)
 
 twlEdit <- lapply(twlEdit,subset,Deleted == FALSE)
+```
+
+```{r echo = FALSE, fig.cap = "Example of light data with associated twilight events - red = sunset, blue = sunrise", dpi = 300}
+lightImage(OSFLdata[[5]], zlim = c(0,5),offset = 19)
+tsimagePoints(twlEdit[[5]]$Twilight, 
+              offset = 12, 
+              pch = 16, 
+              cex = 0.5,
+              col = ifelse(twlEdit[[5]]$Rise, "dodgerblue", "firebrick"))
 ```
 
 ### Save the results
@@ -450,57 +489,57 @@ twlEdit[[i]]$Zenith[which(twlEdit[[i]]$Threshold == 4)] <- 93.05437
 twlEdit[[1]] <- twlEdit[[1]][3:nrow(twlEdit[[1]]),]
 twlEdit[[2]] <- twlEdit[[2]][3:nrow(twlEdit[[2]]),]
 twlEdit[[3]] <- twlEdit[[3]][3:nrow(twlEdit[[3]]),]
+twlEdit[[4]] <- twlEdit[[4]][1:(nrow(twlEdit[[4]])-8),]
 twlEdit[[8]] <- twlEdit[[8]][1:724,]
-twlEdit[[15]] <- twlEdit[[15]][3:850,]
-twlEdit[[15]] <- twlEdit[[15]][complete.cases(twlEdit[[15]]),]
+twlEdit[[15]] <- twlEdit[[15]][3:(nrow(twlEdit[[15]])-4),]
 twlEdit[[16]] <- twlEdit[[16]][7:nrow(twlEdit[[16]]),]
 ```
 ### Set tolerance value around the equinox period.     
 These values don't change longitude estimates, only latitude. They interpolate latitude around equniox periods The larger the tol value the longer the interpolation. The edits below were make manually to best match migration through Central America. 
-```{r setTols}
+```{r setTols, eval = FALSE}
 tolvalues <- array(NA,c((nBirds+1),2))
 tolvalues[,1]<-0
 tolvalues[,2]<-0.08
 
 # Manual adjustments for Fall Equinox period 
 tolvalues[1,1]<-0.13
-tolvalues[2,1]<-0.1
+tolvalues[2,1]<-0.101
 tolvalues[3,1]<-0.2
 tolvalues[4,1]<-0.17
-tolvalues[5,1]<-0.08
-tolvalues[6,1]<-0.125
-tolvalues[7,1]<-0.13
-tolvalues[8,1]<-0.1
+tolvalues[5,1]<-0.22
+tolvalues[6,1]<-0.2
+tolvalues[7,1]<-0.168
+tolvalues[8,1]<-0.195
 tolvalues[9,1]<-0.105
 tolvalues[10,1]<-0.2
 tolvalues[11,1]<-0.115
 tolvalues[12,1]<-0.13
 tolvalues[13,1]<-0.165
-tolvalues[14,1]<-0.13
-tolvalues[15,1]<-0.15
-tolvalues[16,1]<-0.17
+tolvalues[14,1]<-0.185
+tolvalues[15,1]<-0.215
+tolvalues[16,1]<-0.23
 
 # Manual adjustments for Spring Equinox period 
-tolvalues[1,2]<-0.16
-tolvalues[2,2]<-0.2
+tolvalues[1,2]<-0.275
+tolvalues[2,2]<-0.239
 tolvalues[3,2]<-0.2
 tolvalues[4,2]<-0.23
-tolvalues[5,2]<-0.19
-tolvalues[6,2]<-0.26
-tolvalues[7,2]<-0.15
+tolvalues[5,2]<-0.22
+tolvalues[6,2]<-0.27
+tolvalues[7,2]<-0.2285
 tolvalues[8,2]<-0.2
 tolvalues[9,2]<-0.2
-tolvalues[10,2]<-0.165
+tolvalues[10,2]<-0.162
 tolvalues[11,2]<-0.188
 tolvalues[12,2]<-0.17
-tolvalues[13,2]<-0.168
-tolvalues[14,2]<-0.14
-tolvalues[15,2]<-0.15
-tolvalues[16,2]<-0.18
+tolvalues[13,2]<-0.22
+tolvalues[14,2]<-0.24
+tolvalues[15,2]<-0.2
+tolvalues[16,2]<-0.22
 ``` 
 
 ### Obtain the intial path based on a simple threshold analysis. 
-```{r estPath}
+```{r estPath, eval = FALSE}
 path <- vector('list',nBirds+1)
 
 for(i in 1:(nBirds+1)){  
@@ -537,8 +576,8 @@ for(i in 1:(nBirds+1)){
 ```
 
 ### Extract the initial positions
-```{r intitalPaths}
-x0 <- z0 <- vector('list',nBirds+1)
+```{r intitalPaths, eval = FALSE}
+x0 <- z0 <- fixedx <- vector('list',nBirds+1)
 
 for(i in 1:(nBirds+1)){
   # Take the location estimates created above
@@ -546,11 +585,31 @@ x0[[i]]<- path[[i]]$x
 
   # the model also needs the mid-points - generate those here
 z0[[i]]<- trackMidpts(x0[[i]])
+
+fixedx[[i]] <- rep(FALSE,nrow(x0[[i]]))
 }
+
+# Set the dates when we know the positions are fixed - i.e, at the capture site. 
+for(i in 1:3){
+fixedx[[i]][which(twlEdit[[i]][,1] < as.POSIXct("2013-07-30",format = "%Y-%m-%d",tz = "GMT"))] <- TRUE
+x0[[i]][which(twlEdit[[i]][,1] < as.POSIXct("2013-07-30",format = "%Y-%m-%d",tz = "GMT")),1] <- CapLocs[i,1]
+x0[[i]][which(twlEdit[[i]][,1] < as.POSIXct("2013-07-30",format = "%Y-%m-%d",tz = "GMT")),2] <- CapLocs[i,2]
+}
+for(i in 4:11){
+fixedx[[i]][which(twlEdit[[i]][,1] < as.POSIXct("2014-07-10",format = "%Y-%m-%d",tz = "GMT"))] <- TRUE
+x0[[i]][which(twlEdit[[i]][,1] < as.POSIXct("2014-07-10",format = "%Y-%m-%d",tz = "GMT")),1] <- CapLocs[i,1]
+x0[[i]][which(twlEdit[[i]][,1] < as.POSIXct("2014-07-10",format = "%Y-%m-%d",tz = "GMT")),2] <- CapLocs[i,2]
+}
+for(i in 12:nBirds){
+fixedx[[i]][which(twlEdit[[i]][,1] < as.POSIXct("2015-07-10",format = "%Y-%m-%d",tz = "GMT"))] <- TRUE
+x0[[i]][which(twlEdit[[i]][,1] < as.POSIXct("2015-07-10",format = "%Y-%m-%d",tz = "GMT")),1] <- CapLocs[i,1]
+x0[[i]][which(twlEdit[[i]][,1] < as.POSIXct("2015-07-10",format = "%Y-%m-%d",tz = "GMT")),2] <- CapLocs[i,2]
+}
+
 ```
 
 ### Set flight parameters
-```{r beta}
+```{r beta, eval = FALSE}
 beta <- c(0.7, 0.08)
 ```
 
@@ -563,7 +622,7 @@ ylim <- c(-90, 90)
 
 
 ### Function to construct a land/sea mask
-```{r}
+```{r eval = FALSE}
 distribution.mask <- function(xlim, ylim, land = TRUE, shape) {
   
   r <- raster(res = c(0.25,0.25),
@@ -591,7 +650,7 @@ distribution.mask <- function(xlim, ylim, land = TRUE, shape) {
 
 ### Define mask to allow OSFL to stop only on land
 
-```{r distmask}
+```{r distmask, eval = FALSE}
 is.dist <- distribution.mask(shape=Land,
                              xlim = xlim,
                              ylim = ylim,
@@ -600,7 +659,7 @@ is.dist <- distribution.mask(shape=Land,
 
 ### Define the log prior for x and z
 
-```{r logprior}
+```{r logprior, eval = FALSE}
 log.prior <- function(p) {
     f <- is.dist(p)
     ifelse(f | is.na(f), 0, -10)
@@ -608,7 +667,7 @@ log.prior <- function(p) {
 ```
 
 ### Define the threshold model 
-```{r model}
+```{r model, eval = FALSE}
 model <-  vector('list', nBirds+1)
 
 for(i in 1:(nBirds+1)){
@@ -622,13 +681,14 @@ model[[i]]<- thresholdModel(twilight = twlEdit[[i]]$Twilight,
                             logp.z = log.prior, 
                             x0 = x0[[i]],
                             z0 = z0[[i]],
+                            fixedx = fixedx[[i]],
                             zenith = twlEdit[[i]]$Zenith)
 }
 
 ```
 
 ### Define the error distribution around each location #
-```{r error.def}
+```{r error.def, eval = FALSE}
 proposal.x <- proposal.z <- vector('list',nBirds+1)
 
 for(i in 1:(nBirds+1)){
@@ -688,8 +748,7 @@ saveRDS(fit,paste0("OSFL_fit_",format(Sys.Date(),"%b_%d_%Y"),".rds"))
 ```
 
 ```{r readFit, echo = FALSE, eval = FALSE}
-fit <- readRDS("Data/MCMC_fit/OSFL_fit_Jan_27_2017.rds")
-str(fit[[1]])
+fit <- readRDS("OSFL_fit_Mar_07_2017.rds")
 ```
 
 ```{r eval = FALSE}
@@ -738,23 +797,25 @@ Nov1[i]<-"2015-11-01"
 Mar1[i]<-"2016-03-01"
 }
 
-source("Functions/MigSchedules.R")
+library(mth)
 
 schedules <- vector('list',(nBirds+1))
 
 for(i in 1:(nBirds+1)){
-schedules[[i]]<- MigSchedule(MCMC = S[[i]], 
+schedules[[i]]<- mth::MigSchedule(MCMC = S[[i]], 
                              prob = 0.95, 
-                             known.stationary = c(Nov1[i],Mar1[i]),
-                             make.stationary.raster = TRUE, 
+                             known.breed = c(May1[i],July[i]),
+                             known.winter = c(Nov1[i],Feb1[i]),
+                             plot = FALSE,
                              plot.legend = FALSE,
                              rm.lat.equinox = TRUE, 
-                             days.omit = 5)
+                             days.omit = 5,
+                             latAllow = c(0,5))
 }
 ```
 
 ```{r readSchedules, echo = FALSE}
-schedules <- readRDS("Schedules_Jan_27_2017.rds")
+schedules <- readRDS("Schedules_Mar_07_2017.rds")
 ```
 
 ## Further analyses 
@@ -1141,54 +1202,331 @@ birdsfall[birdsfall>0]<-1
 ```
 
 ### Calculate Importance of each stop-over area
-$$Importance = \frac{\left(\sum(Stop Duration) * BirdsUsed \right )}{max(\sum(Stop Duration) * BirdsUsed)}$$
+$$Importance = \frac{\left(\sum(Stop Duration) * \frac{BirdsUsed}{max(BirdsUsed)} \right )}{max(\sum(Stop Duration) * \frac{BirdsUsed}{max(BirdsUsed)})}$$
 
 ```{r}
-SpringImportance <- sum(stack(springstops))*sum(birdsspring) / 
-                    cellStats(sum(stack(springstops))*sum(birdsspring),max)
-
-FallImportance <- sum(stack(fallstops))*sum(birdsfall) / 
-                  cellStats(sum(stack(fallstops))*sum(birdsfall),max)
+SpringImportance <- (sum(stack(springstops))*(sum(birdsspring)/max(birdsspring))) / 
+                    cellStats(sum(stack(springstops))*(sum(birdsspring)/max(birdsspring)),max)			
+					
+FallImportance <- (sum(stack(fallstops))*(sum(birdsfall)/max(birdsfall))) / 
+                  cellStats(sum(stack(fallstops))*(sum(birdsfall)/max(birdsfall)),max)
 ```
      
      
 Important Areas during the fall    
     
-```{r echo = FALSE, dpi = 600}
+```{r echo = FALSE, dpi = 600, warning = FALSE}
+# subset the fall importance raster into fall regions #
+# named from North to South #
+FallRegion1 <- crop(FallImportance,extent(c(-133,-125,57,61.5)))   # Northern Canada
+FallRegion2 <- crop(FallImportance,extent(c(-123,-111,47,53)))     # BC/Washington
+FallRegion3 <- crop(FallImportance,extent(c(-104,-96,25.5,32.5)))  # Texas
+FallRegion4 <- crop(FallImportance,extent(c(-100,-88,15.3,20.75))) # Mexico 
+FallRegion5 <- crop(FallImportance,extent(c(-89,-83.5,11.8,15.2))) # Nicaruaga/Hondoras
+FallRegion6 <- crop(FallImportance,extent(c(-86,-74.5,5.3,11.55))) # Panama 
+FallRegion7 <- crop(FallImportance,extent(c(-78,-74.5,-3.5,1)))    # Ecuador
+
+FallRegion1[!is.na(FallRegion1)] <- 1
+FallRegion2[!is.na(FallRegion2)] <- 2
+FallRegion3[!is.na(FallRegion3)] <- 3
+FallRegion4[!is.na(FallRegion4)] <- 4
+FallRegion5[!is.na(FallRegion5)] <- 5
+FallRegion6[!is.na(FallRegion6)] <- 6
+FallRegion7[!is.na(FallRegion7)] <- 7
+
+FallRegions <- sum(stack(extend(FallRegion1,extent(FallImportance),value = NA),
+      			extend(FallRegion2,extent(FallImportance),value = NA),
+      			extend(FallRegion3,extent(FallImportance),value = NA),
+      			extend(FallRegion4,extent(FallImportance),value = NA),
+      			extend(FallRegion5,extent(FallImportance),value = NA),
+      			extend(FallRegion6,extent(FallImportance),value = NA),
+      			extend(FallRegion7,extent(FallImportance),value = NA)),na.rm = TRUE)
+
+FallRegions[FallRegions == 0]<-NA
+
+### When moving through important areas 
+
+FallRegion1pass <- FallRegion2pass <- FallRegion3pass <- FallRegion4pass <- FallRegion5pass <- FallRegion6pass <- FallRegion7pass <- array(NA,c(16,54))
+FallRegion1Dates <- FallRegion2Dates <- FallRegion3Dates <- FallRegion4Dates <- FallRegion5Dates <- FallRegion6Dates <- FallRegion7Dates <- array(NA,c((nBirds+1),4))
+
+winterNum <- rep(NA,(nBirds+1))
+
+for(i in 1:(nBirds+1)){
+# store the movements in a new vector
+stops[[i]]<-schedules[[i]]$movements
+
+# Change the value of the raster to the stop duration
+for(n in 1:nlayers(stops[[i]])){
+stops[[i]][[n]][stops[[i]][[n]] > 0] <- as.numeric(as.character(schedules[[i]]$Schedule$duration[n]))
+FallRegion1pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(FallRegion1,extent(FallImportance),value = NA)),sum)
+FallRegion2pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(FallRegion2,extent(FallImportance),value = NA)),sum)
+FallRegion3pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(FallRegion3,extent(FallImportance),value = NA)),sum)
+FallRegion4pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(FallRegion4,extent(FallImportance),value = NA)),sum)
+FallRegion5pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(FallRegion5,extent(FallImportance),value = NA)),sum)
+FallRegion6pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(FallRegion6,extent(FallImportance),value = NA)),sum)
+FallRegion7pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(FallRegion7,extent(FallImportance),value = NA)),sum)
+}
+
+
+# Identify when non-breeding winter starts
+winterNum[i] <- which(schedules[[i]]$Schedule$duration == (max(schedules[[i]]$Schedule$duration)))
+
+FallRegion1Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(FallRegion1pass[i,1:winterNum[i]] > 0)),1]),"%j"))
+FallRegion1Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(FallRegion1pass[i,1:winterNum[i]] > 0)),2]),"%j"))
+
+FallRegion2Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(FallRegion2pass[i,1:winterNum[i]] > 0)),1]),"%j"))
+FallRegion2Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(FallRegion2pass[i,1:winterNum[i]] > 0)),2]),"%j"))
+
+FallRegion3Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(FallRegion3pass[i,1:winterNum[i]] > 0)),1]),"%j"))
+FallRegion3Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(FallRegion3pass[i,1:winterNum[i]] > 0)),2]),"%j"))
+
+FallRegion4Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(FallRegion4pass[i,1:winterNum[i]] > 0)),1]),"%j"))
+FallRegion4Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(FallRegion4pass[i,1:winterNum[i]] > 0)),2]),"%j"))
+
+FallRegion5Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(FallRegion5pass[i,1:winterNum[i]] > 0)),1]),"%j"))
+FallRegion5Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(FallRegion5pass[i,1:winterNum[i]] > 0)),2]),"%j"))
+
+FallRegion6Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(FallRegion6pass[i,1:winterNum[i]] > 0)),1]),"%j"))
+FallRegion6Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(FallRegion6pass[i,1:winterNum[i]] > 0)),2]),"%j"))
+
+FallRegion7Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(FallRegion7pass[i,1:winterNum[i]] > 0)),1]),"%j"))
+FallRegion7Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(FallRegion7pass[i,1:winterNum[i]] > 0)),2]),"%j"))
+}
+
+# Important Areas during the fall
+    
+FallImportance <- (sum(stack(fallstops))*(sum(birdsfall)/max(birdsfall))) / 
+                  cellStats(sum(stack(fallstops))*(sum(birdsfall)/max(birdsfall)),max)
+
 par(mar = c(0,0,0,0))
-plot(Americas, xlim = c(-178.6541,-66.02323), ylim= c(-10,70), col = "gray88",border = "gray50")
-plot(FallImportance, add = TRUE, col = c(NA,rev(terrain.colors(100))), legend = FALSE)
+plot(Americas, xlim = c(-178.6541,-78), ylim= c(0,70))
+plot(FallImportance, add = TRUE, col = rev(gray.colors(100, start = 0.1, end = 0.9, gamma = 2.2, alpha = NULL)), legend = FALSE)
 plot(Canada, add = TRUE, border = "gray50")
 plot(States, add = TRUE, border = "gray50")
 plot(Americas,add = TRUE,border = "gray50")
-blankraster<-raster(nrow = 1,ncol = 11)
-values(blankraster)<-seq(0,1,0.1)
-plot(blankraster,useRaster = TRUE,legend.only = TRUE, horizontal = TRUE,col = c("transparent",rev(terrain.colors(100))),
-       legend.width=0.5, legend.shrink=0.35,
-       axis.args=list(at=seq(0,1,0.1),
-                    labels=seq(0,1,0.1), 
-                    cex.axis=1),
-     legend.args=list(text='Importance', side=3, font=2, line=0, cex=1.25))
+FallImportance[FallImportance<0.1]<-NA
+plot(FallImportance, add = TRUE, col = rev(bpy.colors(100)), legend = FALSE)
+rect(-133,57,-125,61.5, lty = 1,lwd = 2) # Region1
+rect(-123,47,-111,53, lty = 1,lwd = 2) # Region2
+rect(-104,27.5,-96,32.5, lty = 1,lwd = 2) # Region3
+rect(-100,15.3,-88,20.75, lty = 1,lwd = 2) # Region4
+rect(-89,11.8,-83.5,15.2, lty = 1,lwd = 2) # Region5
+rect(-86,5.3,-74.5,11.55, lty = 1,lwd = 2) # Region6
+rect(-78,-1.5,-74.5,1, lty = 1,lwd = 2) # Region7
+blankraster<-raster(nrow = 1,ncol = 10)
+values(blankraster)<-seq(0.1,1,0.1)
+plot(blankraster,useRaster = TRUE,legend.only = TRUE, horizontal = TRUE,col = rev(bpy.colors(100)),
+       legend.width=0.25, legend.shrink=0.35,
+       smallplot=c(0.2,0.625,0.09,0.1),
+       axis.args=list(at=seq(0.1,1,0.1),
+                    labels=seq(0.1,1,0.1), 
+                    cex.axis=0.9),
+     legend.args=list(text='Importance', side=3, font=2, line=0, cex=1))
+
+par(bty = "l", fig = c(0,0.7,0.125,0.65),new = TRUE,mar = c(4,4,0,0))
+plot(NA, xlim = c(200,300),ylim = c(0.5,7.5),xlab = "",xaxt = "n", yaxt = "n",ylab = "")
+axis(1,labels = seq(200,300,5), at = seq(200,300,5))
+axis(2,las = 2, at = 1:7, labels = 7:1)
+mtext("Ordinal Day", 1, at = 250, line = 1.75)
+mtext("Fall Stop-over Region",2, at = 4, line = 1.75)
+segments(apply(FallRegion1Dates,2,min,na.rm = TRUE)[1],7,apply(FallRegion1Dates,2,max,na.rm = TRUE)[2],7, col = "black", lwd = 1, lty = 2)
+rect(apply(FallRegion1Dates,2,mean,na.rm = TRUE)[1],6.9,apply(FallRegion1Dates,2,mean,na.rm = TRUE)[2],7.1, col = "gray", lwd = 1)
+
+segments(apply(FallRegion2Dates,2,min,na.rm = TRUE)[1],6,apply(FallRegion2Dates,2,max,na.rm = TRUE)[2],6, col = "black", lwd = 1, lty = 2)
+rect(apply(FallRegion2Dates,2,mean,na.rm = TRUE)[1],5.9,apply(FallRegion2Dates,2,mean,na.rm = TRUE)[2],6.1, col = "gray", lwd = 1)
+
+segments(apply(FallRegion3Dates,2,min,na.rm = TRUE)[1],5,apply(FallRegion3Dates,2,max,na.rm = TRUE)[2],5, col = "black", lwd = 1, lty = 2)
+rect(apply(FallRegion3Dates,2,mean,na.rm = TRUE)[1],4.9,apply(FallRegion3Dates,2,mean,na.rm = TRUE)[2],5.1, col = "gray", lwd = 1)
+
+segments(apply(FallRegion4Dates,2,min,na.rm = TRUE)[1],4,apply(FallRegion4Dates,2,max,na.rm = TRUE)[2],4, col = "black", lwd = 1, lty = 2)
+rect(apply(FallRegion4Dates,2,mean,na.rm = TRUE)[1],3.9,apply(FallRegion4Dates,2,mean,na.rm = TRUE)[2],4.1, col = "gray", lwd = 1)
+
+segments(apply(FallRegion5Dates,2,min,na.rm = TRUE)[1],3,apply(FallRegion5Dates,2,max,na.rm = TRUE)[2],3, col = "black", lwd = 1, lty = 2)
+rect(apply(FallRegion5Dates,2,mean,na.rm = TRUE)[1],2.9,apply(FallRegion5Dates,2,mean,na.rm = TRUE)[2],3.1, col = "gray", lwd = 1)
+
+# These start to cross the year mark - most likely birds wintering in those areas #
+FallRegion6Dates[which(FallRegion6Dates[,2]<200),] <- NA
+segments(apply(FallRegion6Dates,2,min,na.rm = TRUE)[1],2,apply(FallRegion6Dates,2,max,na.rm = TRUE)[2],2, col = "black", lwd = 1, lty = 2)
+rect(apply(FallRegion6Dates,2,mean,na.rm = TRUE)[1],1.9,apply(FallRegion6Dates,2,mean,na.rm = TRUE)[2],2.1, col = "gray", lwd = 1)
+
+# These start to cross the year mark - most likely birds wintering in those areas #
+FallRegion7Dates[which(FallRegion7Dates[,2]<200),] <- NA
+segments(apply(FallRegion7Dates,2,min,na.rm = TRUE)[1],1,apply(FallRegion7Dates,2,max,na.rm = TRUE)[2],1, col = "black", lwd = 1, lty = 2)
+rect(apply(FallRegion7Dates,2,mean,na.rm = TRUE)[1],0.9,apply(FallRegion6Dates,2,mean,na.rm = TRUE)[2],1.1, col = "gray", lwd = 1)
 ```
     
 Important areas in the Spring    
     
-```{r}
+```{r warning = FALSE, echo = FALSE}
+# subset the spring importance raster into spring regions #
+# named from South to North #
+SpringRegion1 <- crop(SpringImportance,extent(c(-80,-74,-5.5,2.5)))   # Ecuador
+SpringRegion2 <- crop(SpringImportance,extent(c(-83.5,-72,2.5,10.1))) # Panama/Colombia
+SpringRegion3 <- crop(SpringImportance,extent(c(-87,-81,10,14.7)))    # Nicaragua
+SpringRegion4 <- crop(SpringImportance,extent(c(-100,-88,14,23)))     # Mexico 
+SpringRegion5 <- crop(SpringImportance,extent(c(-124,-118,39.5,48.31)))# P. NW 
+SpringRegion6 <- crop(SpringImportance,extent(c(-126,-118,48.5,53))) # BC
+
+SpringRegion1[!is.na(SpringRegion1)] <- 8
+SpringRegion2[!is.na(SpringRegion2)] <- 9
+SpringRegion3[!is.na(SpringRegion3)] <- 10
+SpringRegion4[!is.na(SpringRegion4)] <- 11
+SpringRegion5[!is.na(SpringRegion5)] <- 12
+SpringRegion6[!is.na(SpringRegion6)] <- 13
+
+
+SpringRegions <- sum(stack(extend(SpringRegion1,extent(SpringImportance),value = NA),
+      			extend(SpringRegion2,extent(SpringImportance),value = NA),
+      			extend(SpringRegion3,extent(SpringImportance),value = NA),
+      			extend(SpringRegion4,extent(SpringImportance),value = NA),
+      			extend(SpringRegion5,extent(SpringImportance),value = NA),
+      			extend(SpringRegion6,extent(SpringImportance),value = NA)),na.rm = TRUE)
+
+SpringRegions[SpringRegions == 0]<-NA
+
+SpringRegions[SpringRegions > 1] <- 1
+
+SpringAreaImpArea <- raster::area(SpringRegions)
+
+PercentSpringProtect <- cellStats(protected*SpringRegions,sum)/cellStats(SpringAreaImpArea*SpringRegions,sum)
+
+### When moving through important areas 
+
+SpringRegion1pass <- SpringRegion2pass <- SpringRegion3pass <- SpringRegion4pass <- SpringRegion5pass <- SpringRegion6pass  <- array(NA,c(16,54))
+SpringRegion1Dates <- SpringRegion2Dates <- SpringRegion3Dates <- SpringRegion4Dates <- SpringRegion5Dates <- SpringRegion6Dates <- array(NA,c((nBirds+1),2))
+
+winterNum <- rep(NA,(nBirds+1))
+
+for(i in 1:(nBirds+1)){
+# store the movements in a new vector
+stops[[i]]<-schedules[[i]]$movements
+
+# Change the value of the raster to the stop duration
+for(n in 1:nlayers(stops[[i]])){
+stops[[i]][[n]][stops[[i]][[n]] > 0] <- as.numeric(as.character(schedules[[i]]$Schedule$duration[n]))
+SpringRegion1pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(SpringRegion1,extent(SpringImportance),value = NA)),sum)
+SpringRegion2pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(SpringRegion2,extent(SpringImportance),value = NA)),sum)
+SpringRegion3pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(SpringRegion3,extent(SpringImportance),value = NA)),sum)
+SpringRegion4pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(SpringRegion4,extent(SpringImportance),value = NA)),sum)
+SpringRegion5pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(SpringRegion5,extent(SpringImportance),value = NA)),sum)
+SpringRegion6pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(SpringRegion6,extent(SpringImportance),value = NA)),sum)
+}
+
+
+# Identify when non-breeding winter starts
+winterNum[i] <- which(schedules[[i]]$Schedule$duration == (max(schedules[[i]]$Schedule$duration)))
+
+SpringRegion1Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(SpringRegion1pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),1]),"%j"))
+SpringRegion1Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(SpringRegion1pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),2]),"%j"))
+
+SpringRegion2Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(SpringRegion2pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),1]),"%j"))
+SpringRegion2Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(SpringRegion2pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),2]),"%j"))
+
+SpringRegion3Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(SpringRegion3pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),1]),"%j"))
+SpringRegion3Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(SpringRegion3pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),2]),"%j"))
+
+SpringRegion4Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(SpringRegion4pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),1]),"%j"))
+SpringRegion4Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(SpringRegion4pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),2]),"%j"))
+
+SpringRegion5Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(SpringRegion5pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),1]),"%j"))
+SpringRegion5Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(SpringRegion5pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),2]),"%j"))
+
+SpringRegion6Dates[i,1]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[min(which(SpringRegion6pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),1]),"%j"))
+SpringRegion6Dates[i,2]<-as.numeric(format(as.Date(schedules[[i]]$Schedule[max(which(SpringRegion6pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),2]),"%j"))
+
+}
+
+# Important areas in the Spring    
+SpringImportance <- (sum(stack(springstops))*(sum(birdsspring)/max(birdsspring))) / 
+                    cellStats(sum(stack(springstops))*(sum(birdsspring)/max(birdsspring)),max)	
+		
 par(mar = c(0,0,0,0))
-plot(Americas, xlim = c(-178.6541,-66.02323), ylim= c(-10,70), col = "gray88",border = "gray50")
-plot(SpringImportance, add = TRUE, legend = FALSE, col = c(NA,rev(terrain.colors(100))))
+plot(Americas, xlim = c(-178.6541,-76), ylim= c(-10,70))
+plot(SpringImportance, add = TRUE, legend = FALSE, col = rev(gray.colors(100, start = 0.1, end = 0.9, gamma = 2.2, alpha = NULL)))
 plot(Canada, add = TRUE, border = "gray50")
 plot(States, add = TRUE, border = "gray50")
 plot(Americas,add = TRUE,border = "gray50")
-plot(blankraster,useRaster = TRUE,legend.only = TRUE, horizontal = TRUE,col = c("transparent",rev(terrain.colors(100))),
-       legend.width=0.5, legend.shrink=0.35,
-       axis.args=list(at=seq(0,1,0.1),
-                    labels=seq(0,1,0.1), 
-                    cex.axis=1),
-     legend.args=list(text='Importance', side=3, font=2, line=0, cex=1.25))
+SpringImportance[SpringImportance < 0.1] <- NA
+rect(-80,-5.5,-74,2.5, lty = 1,lwd = 2) # Region1
+rect(-83.5,2.5,-72,10.1, lty = 1,lwd = 2) # Region2
+rect(-87,10,-81,14.7, lty = 1,lwd = 2) # Region3
+rect(-100,14,-88,23, lty = 1,lwd = 2) # Region4
+rect(-124,39.5,-118,48.31, lty = 1,lwd = 2) # Region5
+rect(-126,48.5,-118,53, lty = 1,lwd = 2) # Region6
+plot(SpringImportance, add = TRUE, legend = FALSE, col = rev(bpy.colors(100)))
+plot(blankraster,useRaster = TRUE,legend.only = TRUE, horizontal = TRUE,col = rev(bpy.colors(100)),
+       legend.width=0.25, legend.shrink=0.35,
+       smallplot=c(0.125,0.57,0.09,0.1),
+       axis.args=list(at=seq(0.1,1,0.1),
+                    labels=seq(0.1,1,0.1), 
+                    cex.axis=0.9),
+     legend.args=list(text='Importance', side=3, font=2, line=0, cex=1))
 
+par(bty = "l", fig = c(0,0.6,0.1,0.65),new = TRUE,mar = c(4,3,0,0))
+plot(NA, xlim = c(35,165),ylim = c(0.5,6.5),xlab = "",xaxt = "n", yaxt = "n",ylab = "")
+axis(1,labels = seq(35,165,5), at = seq(35,165,5))
+axis(2,las = 2, at = 1:6, labels = 8:13)
+mtext("Ordinal Day", 1, at = 100, line = 1.75)
+mtext("Spring Stop-over Region",2, at = 3.5, line = 2)
+
+# These start to cross the year mark - most likely birds wintering in those areas #
+SpringRegion1Dates[which(SpringRegion1Dates[,1] > 200),] <- NA
+
+segments(apply(SpringRegion1Dates,2,min,na.rm = TRUE)[1],1,apply(SpringRegion1Dates,2,max,na.rm = TRUE)[2],1, col = "black", lwd = 1, lty = 2)
+rect(apply(SpringRegion1Dates,2,mean,na.rm = TRUE)[1],0.9,apply(SpringRegion1Dates,2,mean,na.rm = TRUE)[2],1.1, col = "gray", lwd = 1)
+
+# These start to cross the year mark - most likely birds wintering in those areas #
+SpringRegion2Dates[which(SpringRegion2Dates[,1] > 200),] <- NA
+segments(apply(SpringRegion2Dates,2,min,na.rm = TRUE)[1],2,apply(SpringRegion2Dates,2,max,na.rm = TRUE)[2],2, col = "black", lwd = 1, lty = 2)
+rect(apply(SpringRegion2Dates,2,mean,na.rm = TRUE)[1],1.9,apply(SpringRegion2Dates,2,mean,na.rm = TRUE)[2],2.1, col = "gray", lwd = 1)
+
+segments(apply(SpringRegion3Dates,2,min,na.rm = TRUE)[1],3,apply(SpringRegion3Dates,2,max,na.rm = TRUE)[2],3, col = "black", lwd = 1, lty = 2)
+rect(apply(SpringRegion3Dates,2,mean,na.rm = TRUE)[1],2.9,apply(SpringRegion3Dates,2,mean,na.rm = TRUE)[2],3.1, col = "gray", lwd = 1)
+
+segments(apply(SpringRegion4Dates,2,min,na.rm = TRUE)[1],4,apply(SpringRegion4Dates,2,max,na.rm = TRUE)[2],4, col = "black", lwd = 1, lty = 2)
+rect(apply(SpringRegion4Dates,2,mean,na.rm = TRUE)[1],3.9,apply(SpringRegion4Dates,2,mean,na.rm = TRUE)[2],4.1, col = "gray", lwd = 1)
+
+segments(apply(SpringRegion5Dates,2,min,na.rm = TRUE)[1],5,apply(SpringRegion5Dates,2,max,na.rm = TRUE)[2],5, col = "black", lwd = 1, lty = 2)
+rect(apply(SpringRegion5Dates,2,mean,na.rm = TRUE)[1],4.9,apply(SpringRegion5Dates,2,mean,na.rm = TRUE)[2],5.1, col = "gray", lwd = 1)
+
+segments(apply(SpringRegion6Dates,2,min,na.rm = TRUE)[1],6,apply(SpringRegion6Dates,2,max,na.rm = TRUE)[2],6, col = "black", lwd = 1, lty = 2)
+rect(apply(SpringRegion6Dates,2,mean,na.rm = TRUE)[1],5.9,apply(SpringRegion6Dates,2,mean,na.rm = TRUE)[2],6.1, col = "gray", lwd = 1)
 ```
 
+```{r echo = FALSE}
+# Get maximum number of 'stops'
+nlayersMoves <- rep(NA, nBirds+1)
+for(i in 1:16){
+nlayersMoves[i] <- nlayers(schedules[[i]]$movements)
+}
+
+StopRegion <- BirdsUsedRegion <- array(0,c(max(nlayersMoves),16))
+
+for(i in 1:16){
+for(n in 1:winterNum[i]){
+schedules[[i]]$movements[[n]][!is.na(schedules[[i]]$movements[[n]])] <- 1
+schedules[[i]]$movements[[n]][schedules[[i]]$movements[[n]] == 0] <- NA
+StopRegion[n,i] <- zonal(FallRegions,schedules[[i]]$movements[[n]],na.rm = TRUE, fun = max)[2]
+BirdsUsedRegion[n,i] <- zonal(BirdsFall,schedules[[i]]$movements[[n]],na.rm = TRUE, fun = max)[2]
+}
+for(n in (winterNum[i]+1):nlayersMoves[i]){
+schedules[[i]]$movements[[n]][!is.na(schedules[[i]]$movements[[n]])] <- 1
+schedules[[i]]$movements[[n]][schedules[[i]]$movements[[n]] == 0] <- NA
+StopRegion[n,i] <- zonal(SpringRegions,schedules[[i]]$movements[[n]],na.rm = TRUE, fun = max)[2]
+BirdsUsedRegion[n,i] <- zonal(BirdsSpring,schedules[[i]]$movements[[n]],na.rm = TRUE, fun = max)[2]
+}
+}
+
+
+StopRegion[StopRegion == "-Inf"] <- 0
+BirdsUsedRegion[BirdsUsedRegion == "-Inf"] <- 1
+
+#Durations <- vector('list',nBirds+1)
+#for(i in 1:(nBirds+1)){
+#Durations[[i]] <- cbind(schedules[[i]]$Schedule,StopRegion = StopRegion[1:nlayersMoves[i],i], BirdsUsed = BirdsUsedRegion[1:nlayersMoves[i],i])
+#write.csv(Durations[[i]],paste0("Schedule_",BirdId[i],".csv"),row.names = FALSE)
+#}
+```
 ### Important spring and fall - Importance values > 0.1 
 
 ```{r echo = FALSE}
@@ -1217,90 +1555,31 @@ plot(Americas,add = TRUE,border = "gray50")
 
 ``` 
 
-### When moving through important areas 
-
-
+### Colombia
 ```{r echo = FALSE}
-Region1pass <- Region2pass <- Region3pass <- Region4pass <- array(NA,c(16,54))
-Region1Dates <- Region2Dates <- Region3Dates <- Region4Dates <- array(NA,c((nBirds+1),4))
-winterNum <- rep(NA,(nBirds+1))
+Colombia <- subset(Americas, NAME == "Colombia")
+COcover <- raster("Spatial_Layers/COL_msk_cov.grd")
+waterlines <- shapefile("Spatial_Layers/COL_water_lines_dcw.shp")
+waterarea <- shapefile("Spatial_Layers/COL_water_areas_dcw.shp")
+roads <- shapefile("Spatial_Layers/COL_roads.shp")
 
-for(i in 1:(nBirds+1)){
-# store the movements in a new vector
-stops[[i]]<-schedules[[i]]$movements
-
-# Change the value of the raster to the stop duration
-for(n in 1:nlayers(stops[[i]])){
-stops[[i]][[n]][stops[[i]][[n]] > 0] <- as.numeric(as.character(schedules[[i]]$Schedule$duration[n]))
-Region1pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(Region1,extent(SpringFallImport),value = NA)),sum)
-Region2pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(Region2,extent(SpringFallImport),value = NA)),sum)
-Region3pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(Region3,extent(SpringFallImport),value = NA)),sum)
-Region4pass[i,n] <- cellStats(mask(stops[[i]][[n]],extend(Region4,extent(SpringFallImport),value = NA)),sum)
-}
-
-# Identify when non-breeding winter starts
-winterNum[i] <- which(schedules[[i]]$Schedule$duration == (max(schedules[[i]]$Schedule$duration)))
-
-Region1Dates[i,1]<-as.numeric(format(schedules[[i]]$Schedule[min(which(Region1pass[i,1:winterNum[i]] > 0)),1],"%j"))
-Region1Dates[i,2]<-as.numeric(format(schedules[[i]]$Schedule[max(which(Region1pass[i,1:winterNum[i]] > 0)),2],"%j"))
-
-Region1Dates[i,3]<-as.numeric(format(schedules[[i]]$Schedule[min(which(Region1pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),1],"%j"))
-Region1Dates[i,4]<-as.numeric(format(schedules[[i]]$Schedule[max(which(Region1pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),2],"%j"))
-
-Region2Dates[i,1]<-as.numeric(format(schedules[[i]]$Schedule[min(which(Region2pass[i,1:winterNum[i]] > 0)),1],"%j"))
-Region2Dates[i,2]<-as.numeric(format(schedules[[i]]$Schedule[max(which(Region2pass[i,1:winterNum[i]] > 0)),2],"%j"))
-
-Region2Dates[i,3]<-as.numeric(format(schedules[[i]]$Schedule[min(which(Region2pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),1],"%j"))
-Region2Dates[i,4]<-as.numeric(format(schedules[[i]]$Schedule[max(which(Region2pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),2],"%j"))
-
-Region3Dates[i,1]<-as.numeric(format(schedules[[i]]$Schedule[min(which(Region3pass[i,1:winterNum[i]] > 0)),1],"%j"))
-Region3Dates[i,2]<-as.numeric(format(schedules[[i]]$Schedule[max(which(Region3pass[i,1:winterNum[i]] > 0)),2],"%j"))
-
-Region3Dates[i,3]<-as.numeric(format(schedules[[i]]$Schedule[min(which(Region3pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),1],"%j"))
-Region3Dates[i,4]<-as.numeric(format(schedules[[i]]$Schedule[max(which(Region3pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),2],"%j"))
-
-Region4Dates[i,1]<-as.numeric(format(schedules[[i]]$Schedule[min(which(Region4pass[i,1:winterNum[i]] > 0)),1],"%j"))
-Region4Dates[i,2]<-as.numeric(format(schedules[[i]]$Schedule[max(which(Region4pass[i,1:winterNum[i]] > 0)),2],"%j"))
-
-Region4Dates[i,3]<-as.numeric(format(schedules[[i]]$Schedule[min(which(Region4pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),1],"%j"))
-Region4Dates[i,4]<-as.numeric(format(schedules[[i]]$Schedule[max(which(Region4pass[i,winterNum[i]:54] > 0))+(winterNum[i]-1),2],"%j"))
-}
-
-
-par(bty = "l")
-plot(NA, xlim = c(225,500),ylim = c(0.5,4.5),xlab = "Ordinal Day",xaxt = "n", yaxt = "n",ylab = "Stop-over Region")
-axis(1,labels = c(seq(225,365,10),seq(10,140,10)), at = seq(225,505,10))
-axis(2,las = 2, at = 1:4, labels = 1:4)
-segments(apply(Region1Dates,2,min,na.rm = TRUE)[1],1,apply(Region1Dates,2,max,na.rm = TRUE)[2],1, col = "black", lwd = 1, lty = 2)
-rect(apply(Region1Dates,2,mean,na.rm = TRUE)[1],0.9,apply(Region1Dates,2,mean,na.rm = TRUE)[2],1.1, col = "gray", lwd = 1)
-segments(apply(Region1Dates,2,min,na.rm = TRUE)[3]+365,1,apply(Region1Dates,2,max,na.rm = TRUE)[4]+365,1, col = "black", lwd = 1, lty = 2)
-rect(apply(Region1Dates,2,mean,na.rm = TRUE)[3]+365,0.9,apply(Region1Dates,2,mean,na.rm = TRUE)[4]+365,1.1, col = "gray", lwd = 1)
-
-segments(apply(Region2Dates,2,min,na.rm = TRUE)[1],2,apply(Region2Dates,2,max,na.rm = TRUE)[2],2, col = "black", lwd = 1, lty = 2)
-rect(apply(Region2Dates,2,mean,na.rm = TRUE)[1],1.9,apply(Region2Dates,2,mean,na.rm = TRUE)[2],2.1, col = "gray", lwd = 1)
-segments(apply(Region2Dates,2,min,na.rm = TRUE)[3]+365,2,apply(Region2Dates,2,max,na.rm = TRUE)[4]+365,2, col = "black", lwd = 1, lty = 2)
-rect(apply(Region2Dates,2,mean,na.rm = TRUE)[3]+365,1.9,apply(Region2Dates,2,mean,na.rm = TRUE)[4]+365,2.1, col = "gray", lwd = 1)
-
-segments(apply(Region3Dates[c(2,4:6,8,11:16),],2,min,na.rm = TRUE)[1],3,
-         apply(Region3Dates[c(2,4:6,8,11:16),],2,max,na.rm = TRUE)[2],3, col = "black", lwd = 1, lty = 2)
-rect(apply(Region3Dates[c(2,4:6,8,11:16),],2,mean,na.rm = TRUE)[1],2.9,apply(Region3Dates[c(2,4:6,8,11:16),],2,mean,na.rm = TRUE)[2],3.1, col = "gray", lwd = 1)
-segments(apply(Region3Dates[c(2,4:6,8,11:16),],2,min,na.rm = TRUE)[3]+365,3,
-         apply(Region3Dates[c(2,4:6,8,11:16),],2,max,na.rm = TRUE)[4]+365,3, col = "black", lwd = 1, lty = 2)
-rect(apply(Region3Dates[c(2,4:6,8,11:16),],2,mean,na.rm = TRUE)[3]+365,2.9,
-     apply(Region3Dates[c(2,4:6,8,11:16),],2,mean,na.rm = TRUE)[4]+365,3.1, col = "gray", lwd = 1)
-
-
-segments(apply(Region4Dates[c(2,4:6,8,11,13:16),],2,min,na.rm = TRUE)[1],4,
-         apply(Region4Dates[c(2,4:6,8,11,13:16),],2,max,na.rm = TRUE)[2],4, col = "black", lwd = 1, lty = 2)
-rect(apply(Region4Dates[c(2,4:6,8,11,13:16),],2,mean,na.rm = TRUE)[1],3.9,
-     apply(Region3Dates[c(2,4:6,8,11:16),],2,mean,na.rm = TRUE)[2],4.1, col = "gray", lwd = 1)
-segments(apply(Region4Dates[c(2,4:6,8,11,13:16),],2,min,na.rm = TRUE)[3]+365,4,
-         apply(Region4Dates[c(2,4:6,8,11,13:16),],2,max,na.rm = TRUE)[4]+365,4, col = "black", lwd = 1, lty = 2)
-rect(apply(Region4Dates[c(2,4:6,8,11,13:16),],2,mean,na.rm = TRUE)[3]+365,3.9,
-     apply(Region4Dates[c(2,4:6,8,11,13:16),],2,mean,na.rm = TRUE)[4]+365,4.1, col = "gray", lwd = 1)
+par(mar = c(0,0,0,0))
+plot(Colombia)
+#plot(waterlines, add = TRUE, col = "blue")
+plot(waterarea, add = TRUE, col = "blue",border = "blue")
+plot(COcover, add = TRUE,alpha = 0.5,legend = FALSE)
+plot(Colombia, add = TRUE)
+plot(Americas, add = TRUE, border = "gray88")
+BirdsUseCrop <- crop(BirdsUse,extent(Colombia))
+plot(BirdsUseCrop, add = TRUE, col = rev(bpy.colors(13)), breaks = seq(1,13,1),alpha = 0.3,legend = FALSE)
+plot(BirdsUseCrop,useRaster = TRUE,legend.only = TRUE, horizontal = TRUE,col = rev(bpy.colors(13)),
+       legend.width=0.25, legend.shrink=0.35,
+       smallplot=c(0.6,0.9,0.8,0.8125),
+       axis.args=list(at=seq(1,13,1),
+                    labels=seq(1,13,1), 
+                    cex.axis=0.9),
+     legend.args=list(text='Birds', side=3, font=2, line=0, cex=1))
 ```
-
-
 
 
 
