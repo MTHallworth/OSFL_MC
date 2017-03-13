@@ -10,6 +10,7 @@
 *.xls
 *.xlsx
 *.pdf
+*.zip
 
 # Ignore these directories
 Spatial_Layers/
