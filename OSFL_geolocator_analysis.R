@@ -7,7 +7,7 @@ library(sp)
 library(TwGeos)
 library(MASS)
 library(mth, lib.loc = "C:/Users/hallworthm/R_Library")
-library(SGAT)
+library(SGAT, lib.loc = "C:/Users/hallworthm/R_Library")
 #library(maptools)
 #library(FLightR)
 
@@ -562,12 +562,14 @@ model[[i]]<- thresholdModel(twilight = twlEdit[[i]]$Twilight,
 }
 
 # saveRDS(model,"OSFL_model.rds")
+# model <- readRDS("OSFL_model.rds")
+# nBirds <- 15
 ## ----error.def-----------------------------------------------------------
 proposal.x <- proposal.z <- vector('list',nBirds+1)
 
 for(i in 1:(nBirds+1)){
-proposal.x[[i]] <- mvnorm(S=diag(c(0.0025,0.0025)),n=nlocation(x0[[i]]))
-proposal.z[[i]] <- mvnorm(S=diag(c(0.0025,0.0025)),n=nlocation(z0[[i]]))
+proposal.x[[i]] <- mvnorm(S=diag(c(0.0025,0.0025)),n=nlocation(model[[i]]$x0))
+proposal.z[[i]] <- mvnorm(S=diag(c(0.0025,0.0025)),n=nlocation(model[[i]]$z0))
 }
 
 ## ----eval = FALSE--------------------------------------------------------
