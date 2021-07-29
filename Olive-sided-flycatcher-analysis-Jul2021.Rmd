@@ -1,0 +1,1019 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+script by: Michael T. Hallworth
+
+```{r, eval = FALSE}
+#############################################################################
+#
+#   System set up (uncomment code if running code for the first time)
+#
+#############################################################################
+
+# Alternatively you can run the following few lines of code to get the packages
+# library(devtools)
+# install_github("SLisovski/GeoLight", ref = "Update_2.01", force = T)
+# install_github("SLisovski/GeoLocTools")
+# library(GeoLocTools)
+# setupGeolocation()
+# devtools::install_github("MTHallworth/SGAT")
+```
+
+Load required packages
+
+```{r, warning = FALSE, message = FALSE}
+################################################################################
+#
+#                           Load packages 
+#
+################################################################################
+
+library(GeoLocTools)
+data(wrld_simpl, package = "maptools") 
+
+setupGeolocation()
+
+library(SGAT)
+library(raster)
+library(sp)
+library(landscapemetrics)
+library(LLmig)
+library(rcartocolor)
+```
+
+Read in spatial layers
+
+```{r}
+# Read in spatial layers 
+Americas <- raster::shapefile("Spatial_Layers/Americas.shp")
+
+OSFLDist <- raster::shapefile("Spatial_Layers/OliveSidedFlycatcher.shp")
+
+States <- raster::shapefile("Spatial_Layers/st99_d00.shp")
+
+Canada <- raster::shapefile("Spatial_Layers/Canada.shp")
+
+AK <- subset(States, NAME == "Alaska")
+```
+
+```{r, error = TRUE}
+#############################################################################
+#
+#                          Define projections used in the analysis
+#
+#############################################################################
+
+WGS84 <- sf::st_crs(4326)$proj4string
+NAEA <- "+proj=aea 
+         +lat_1=20 
+         +lat_2=60 
+         +lat_0=40 
+         +lon_0=-96 
+         +x_0=0 +y_0=0 
+         +ellps=GRS80 +datum=NAD83 +units=m +no_defs"
+
+# Transform Canada into WGS84
+
+Canada <- spTransform(Canada,CRS(WGS84))
+
+# Set the projection for shapefiles
+crs(States) <- WGS84
+crs(Americas) <- WGS84
+crs(OSFLDist) <- WGS84
+```
+
+```{r}
+################################################################################
+#
+#                          Read in light-level data 
+#
+################################################################################
+
+AncFiles <- list.files(path = "Data/Anchorage_recoveries",
+                       pattern = ".lux",
+                       full.names = TRUE)
+
+FairFiles <- list.files(path = "Data/Fairbanks_recoveries",
+                        pattern = "driftadj.lux",
+                        full.names=TRUE)
+
+TetlinFiles <- list.files(path = "Data/Tetlin_recoveries",
+                          pattern = ".lux", 
+                          full.names = TRUE)
+
+# Read just the file names for Bird ID
+
+AncNames <- list.files(path = "Data/Anchorage_recoveries",
+                       pattern=".lux")
+
+FairNames <- list.files(path = "Data/Fairbanks_recoveries",
+                        pattern="driftadj.lux")
+
+TetlinNames <- list.files(path = "Data/Tetlin_recoveries",
+                          pattern = ".lux")
+```
+
+```{r}
+# Combine the files into a single object
+
+OSFLFiles <- c(AncFiles, FairFiles, TetlinFiles)
+
+# Combine the bird ID
+BirdId <- c(AncNames, FairNames, TetlinNames)
+
+# More readable BirdId 
+BirdId <- substr(x = BirdId,
+                 start = 1,
+                 stop = 4)
+
+#Determine the number of birds
+nBirds <- length(BirdId)
+```
+
+```{r}
+## ----readLux-------------------------------------------------------------
+OSFLdata <- lapply(X = OSFLFiles, 
+                   FUN = readMTlux) 
+
+for(i in 1:nBirds){
+  #Take the log of light data#
+  OSFLdata[[i]]$Light <- log(OSFLdata[[i]]$Light)
+}
+
+# Take a quick peek #
+# str(OSFLdata,2)
+```
+
+```{r}
+###########################################################################
+#
+#                          Read in Capture Locations 
+#
+###########################################################################
+
+## ----caplocs-------------------------------------------------------------
+# Set the capture coordinates for each bird #
+CapLocs<-array(NA,c(nBirds+1,2))
+
+#CapLocs[1,] <- c(-149.60425,61.38084)    # F202
+#CapLocs[2,] <- c(-149.74919,61.28071)    # F203
+#CapLocs[3,] <- c(-149.80309,61.29737)    # F311
+#CapLocs[4,] <- c(-146.832960,65.335090)  # K288 
+#CapLocs[5,] <- c(-147.1002,64.71122)     # K648
+#CapLocs[6,] <- c(-146.800030,65.33139)   # K654
+#CapLocs[7,] <- c(-146.943180,65.34078)   # K657
+#CapLocs[8,] <- c(-142.30559,63.13592)    # K659
+#CapLocs[9,] <- c(-146.832960,65.335090)  # K660
+#CapLocs[10,] <- c(-147.1002,64.71122)    # K665
+#CapLocs[11,] <- c(-147.758300,64.936900) # K670
+#CapLocs[12,] <- c(-146.832960,65.335090) # S050 
+#CapLocs[13,] <- c(-147.00492,64.78862)   # S052 
+#CapLocs[14,] <- c(-142.30217,63.13515)   # Q330 
+#CapLocs[15,] <- c(-143.21355,63.16566)   # Q334
+#CapLocs[16,] <- c(-148.94470,65.37691) # Q335
+#CapLocs[17,] <- c(-146.832960,65.335090)  # K288 
+
+CapLocs[1,] <- c(-149.603083,61.380549)    # F202
+CapLocs[2,] <- c(-149.74919,61.28071)    # F203
+CapLocs[3,] <- c(-149.80309,61.29737)    # F311
+CapLocs[4,] <- c(-148.94351,65.37703)  # K288 
+CapLocs[5,] <- c(-148.90802,65.3997)     # K648
+CapLocs[6,] <- c(-146.80003,65.33139)   # K654
+CapLocs[7,] <- c(-146.943180,65.34078)   # K657
+CapLocs[8,] <- c(-142.30559,63.13592)    # K659
+CapLocs[9,] <- c(-146.83296,65.335090)  # K660
+CapLocs[10,] <- c(-147.1002,64.71122)    # K665
+CapLocs[11,] <- c(-147.758300,64.936900) # K670
+CapLocs[12,] <- c(-146.8383,65.33454) # S050 
+CapLocs[13,] <- c(-147.00492,64.78862)   # S052 
+CapLocs[14,] <- c(-142.30217,63.13515)   # Q330 
+CapLocs[15,] <- c(-143.21355,63.16566)   # Q334
+CapLocs[16,] <- c(-148.94470,65.37691) # Q335
+CapLocs[17,] <- c(-148.9447,65.37691)  # K288 
+
+CapLocs <- round(CapLocs, digits = 2)
+```
+
+```{r}
+#############################################################################
+#
+#                          First glimpse at the light-data 
+#
+#############################################################################
+
+# ## ----echo = FALSE--------------------------------------------------------
+for (i in 1:nBirds) {
+  if (nrow(OSFLdata[[i]]) > 1) {
+    lightImage(
+      OSFLdata[[i]],
+      offset = 19,
+      zlim = c(0, 10),
+      main = BirdId[i],
+      dt = 300
+    )
+    
+    # Add solar lines for capture location
+    TwGeos::tsimageDeploymentLines(
+      date = seq(
+        min(OSFLdata[[i]]$Date, na.rm = TRUE),
+        
+        max(OSFLdata[[i]]$Date, na.rm = TRUE),
+        "day"
+      ),
+      zenith = 95,
+      lon = CapLocs[i, 1],
+      lat = CapLocs[i, 2],
+      offset = 19,
+      lwd = 3,
+      col = rgb(0, 0, 255, 150, max = 255)
+    )
+    Sys.sleep(2)
+  } else{
+    next
+  }
+}
+
+# onBird <- data.frame(Deploy = rep(as.POSIXct("2011-01-01"),nBirds),
+#                     Recover = rep(as.POSIXct("2011-01-01"),nBirds))
+
+#for(i in 1:nBirds){
+#lightImage(OSFLdata[[i]], 
+#           offset = 19, 
+#           zlim = c(0,10),
+#           main = BirdId[i],
+#           dt = 300)
+#onBird[i,1] <- as.POSIXct(locator(n=1)$x,origin = "1970-01-01")
+#onBird[i,2] <- as.POSIXct(locator(n=1)$x,origin = "1970-01-01")
+#}
+
+# saveRDS(onBird,"onBird_dates.rds")
+
+onBird <- readRDS("onBird_dates.rds")
+```
+
+```{r}
+tempdata <- vector('list', nBirds + 1)
+# SUBSET OUT THE DATA TO ONLY INCLUDE WHEN TAGS WERE ON BIRDS #
+for (i in 1:nBirds) {
+  tempdata[[i]] <-
+    OSFLdata[[i]][OSFLdata[[i]]$Date > onBird[i, 1] &
+                    OSFLdata[[i]]$Date < onBird[i, 2], ]
+  
+  # K288 has two years of data in the same file - 
+  # here we separate them into '2' birds
+  if (BirdId[i] == "K288") {
+    tempdata[[nBirds + 1]] <-
+      OSFLdata[[i]][OSFLdata[[i]]$Date > onBird[i, 2], ]
+  }
+}
+
+OSFLdata <- tempdata
+
+```
+
+```{r}
+###############################################################################
+#
+#                          Assigning twilight events
+#
+###############################################################################
+
+# This new way of defining the seed basically creates a vector of all the days
+# and adds 8:00 to it that way every dark phase is captured.
+
+seed <- lapply(
+  OSFLdata,
+  FUN = function(x) {
+    seed <- seq(
+      from = as.POSIXlt(
+        paste(strptime(x[1, 1],
+                       format = "%Y-%m-%d", tz = "GMT"), "08:00:00"),
+        format = "%Y-%m-%d %H:%M:%S",
+        tz = "GMT"
+      ),
+      to = x[nrow(x), 1],
+      by = "day"
+    )
+    return(seed)
+  }
+)
+
+# use the 'known' dark periods to assign the twilights #
+
+twl <- mapply(
+  x = OSFLdata,
+  y = seed,
+  FUN = function(x, y) {
+    findTwilights(
+      tagdata = x,
+      threshold = 1.5,
+      include = y,
+      dark.min = 10
+    )
+  },
+  # 0.75 hours minimum dark period
+  SIMPLIFY = FALSE
+) # return a list
+
+# take a quick look at the light image with the assigned twlights added on #
+
+for (i in 1:(nBirds + 1)) {
+  lightImage(
+    OSFLdata[[i]],
+    offset = 19,
+    zlim = c(0, 10),
+    main = BirdId[i],
+    dt = 300
+  )
+  
+  # Add assigned twilight times to the light image #
+  TwGeos::tsimagePoints(
+    date = twl[[i]]$Twilight,
+    offset = 19,
+    pch = 19,
+    cex = 0.8,
+    col = ifelse(
+      twl[[i]]$Rise,
+      rgb(255, 0, 0, 150, max = 255),
+      rgb(0, 0, 255, 150, max = 255)
+    )
+  )
+  Sys.sleep(2)
+}
+```
+
+```{r}
+##########################################################################
+#
+#                          Edit twilights
+#
+##########################################################################
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #  # # # #
+#
+# Edits using preprocesslight
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #  # # # # #
+
+# twlProc <- vector('list',nBirds+1)
+
+#for(i in 1:(nBirds+1)){
+
+#cat("\nNEW BIRD! \nprocessing bird ", BirdId[i])
+#twlProc[[i]] <- preprocessLight(tagdata = OSFLdata[[i]],
+#                          threshold = 1.5,
+#                           lmax = 5,
+#                           offset = 19,
+#                            twilights = twl[[i]])
+#}
+
+# saveRDS(twlProc,"ProcessedTwilights_Threshold1.5_Feb2021.rds")
+
+twlProc2 <- readRDS("ProcessedTwilights_Threshold1.5_Feb2021.rds")
+
+# remove edited twlights for analysis #
+twlProc3 <- lapply(twlProc2,
+                   function(x) {
+                     if ("Deleted" %in% colnames(x)) {
+                       z <- x[!x$Deleted, ]
+                     } else{
+                       z <- x
+                     }
+                     return(z)
+                   })
+
+```
+
+```{r}
+###############################################################################
+#
+# Some Zeniths are a bit unrealistic - 89 for example.
+# For those we'll use the calibration data from the anchorage birds
+#
+##############################################################################
+# Create a vector with the dates known to be at deployment #
+calibration.dates <- vector('list', 3) # 3 birds are from anchorage
+
+for (i in 1:3) {
+  calibration.dates[[i]] <- c(OSFLdata[[i]][1, 1],
+                              as.POSIXct("2013-07-30", tz = "GMT"))
+}
+
+## ------------------------------------------------------------------------
+# Extract twilight data during calibration period
+calibration.data <- vector('list', 3)
+
+for (i in 1:3) {
+  calibration.data[[i]] <- subset(
+    twlProc3[[i]],
+    twlProc3[[i]]$Twilight >= calibration.dates[[i]][1] &
+      twlProc3[[i]]$Twilight <= calibration.dates[[i]][2]
+  )
+}
+
+## ------------------------------------------------------------------------
+# create empty vectors to store data #
+sun <-
+  z <-
+  zenith0 <-
+  zenith1 <- twl_t <- twl_deviation <- alpha <- fitml <-
+  vector("list", 3)
+
+# loop through each of the two individuals #
+for (i in 1:3) {
+  # Calculate solar time from calibration data
+  sun[[i]]  <- solar(calibration.data[[i]][, 1])
+  
+  # Adjust the solar zenith angle for atmospheric refraction
+  z[[i]] <- refracted(zenith(
+    sun = sun[[i]],
+    lon = CapLocs[i, 1],
+    lat = CapLocs[i, 2]
+  ))
+  
+  twl_t[[i]]   <- twilight(
+    tm = calibration.data[[i]][, 1],
+    lon = CapLocs[i, 1],
+    lat = CapLocs[i, 2],
+    rise = calibration.data[[i]][, 2],
+    zenith = quantile(z[[i]], probs = 0.5)
+  )
+  
+  # Determine the difference in minutes from when the
+  # sun rose and the geolocator said it rose
+  twl_deviation[[i]] <- ifelse(calibration.data[[i]]$Rise,
+                               as.numeric(difftime(calibration.data[[i]][, 1],
+                                                   twl_t[[i]],
+                                                   units = "mins")),
+                               as.numeric(difftime(twl_t[[i]],
+                                                   calibration.data[[i]][, 1],
+                                                   units = "mins")))
+  
+  twl_deviation[[i]] <-
+    subset(twl_deviation[[i]], twl_deviation[[i]] >= 0)
+  
+  # Describe the distribution of the error
+  fitml[[i]] <- fitdistr(twl_deviation[[i]], "log-Normal")
+  # save the Twilight model parameters
+  alpha[[i]] <- c(fitml[[i]]$estimate[1], fitml[[i]]$estimate[2])
+}
+
+## ----echo=FALSE----------------------------------------------------------
+meanAlpha1 <- mean(c(alpha[[1]][1], alpha[[2]][1], alpha[[3]][1]))
+meanAlpha2 <- mean(c(alpha[[1]][2], alpha[[2]][2], alpha[[3]][2]))
+
+ALPHA <- alpha[[1]]
+ALPHA[1] <- meanAlpha1
+ALPHA[2] <- meanAlpha2
+
+# use mean Anchorage sun angle for Fairbanks birds
+AncZ <- quantile(c(z[[1]], z[[2]], z[[3]]), probs = 0.95)
+```
+
+```{r, echo = FALSE, warning = FALSE, error = TRUE}
+Land <- subset(Americas, SUBREGION == 5 |
+                         SUBREGION == 21 | 
+                         SUBREGION == 13)
+
+E <- disaggregate(subset(Land, NAME == "Ecuador"))
+Ecuador <- E[14, ]
+Land <- (subset(Land, NAME != "Ecuador"))
+Land <- (gUnion(Land, Ecuador))
+
+```
+
+```{r}
+##############################################################################
+#
+#                          Use the grouped model to estimate locations
+#
+##############################################################################
+# Convert the light data into something GeoLight can read #
+twl.gl <- lapply(twlProc3, export2GeoLight)
+
+# Use the twilight times to distinguish between potential locations #
+# you may want to fiddle with the quantile a little bit. The higher the value #
+# the fewer the locations #
+
+CLight <-
+  lapply(
+    twl.gl,
+    changeLight,
+    quantile = 0.92,
+    days = 2,
+    summary = FALSE,
+    plot = T
+  )
+# the following edits needed to be made for the mergeSites 
+# function to work properly without error
+CLight[[7]] <-
+  changeLight(
+    twl.gl[[7]],
+    quantile = 0.90,
+    days = 2,
+    summary = FALSE,
+    plot = TRUE
+  )
+CLight[[11]] <-
+  changeLight(
+    twl.gl[[11]],
+    quantile = 0.90,
+    days = 2,
+    summary = FALSE,
+    plot = TRUE
+  )
+CLight[[15]] <-
+  changeLight(
+    twl.gl[[15]],
+    quantile = 0.92,
+    days = 2,
+    summary = FALSE,
+    plot = TRUE
+  )
+
+ls_merge <- vector('list', (nBirds + 1))
+
+# # slightly altered GeoLight mergeSites2 function to 
+# allow for higher latitudes than 75 N.
+#  source('GL_mergeSites_changed.R')
+# (a <- Sys.time())
+# for(i in 1:(nBirds+1)){
+#  cat("Starting analysis for bird # ",i," ",BirdId[i],"\n")
+#  ls_merge[[i]] <- mergeSites3(tFirst = twl.gl[[i]]$tFirst,
+#                              tSecond = twl.gl[[i]]$tSecond,
+#             type = twl.gl[[i]]$type,
+#             site = CLight[[i]]$site,
+#                         distThreshold = 250,
+#             degElevation = -5.28, # AncZ-90 = -5.28
+#             alpha = c(2.6,0.9),
+#             plot = FALSE,
+#             mask = "land",
+#             method = "log-norm",
+#             spatial_mask = Land)
+# print(Sys.time()-a)
+# saveRDS(ls_merge[[i]], 
+# paste0("D:/OSFL_Geolocator/Merged_sites_",BirdId[i],"_OSFL_Mar2021.rds"))
+# }
+# Sys.time()
+
+ls_files <-
+  list.files(
+    "D:/OSFL_Geolocator",
+    pattern = glob2rx("Merged_sites*_OSFL_Mar2021.rds"),
+    full.names = TRUE
+  )
+
+# re-order the saved files so they are in the same order as the other data #
+ls_files <- ls_files[c(1:4, 6:12, 16:17, 13:15, 5)]
+
+ls_merge <- lapply(ls_files, readRDS)
+```
+
+```{r}
+twlProc4 <- grouped_twl <- vector('list', (nBirds + 1))
+
+for (i in 1:(nBirds + 1)) {
+  Twilight_back <- as.POSIXct(c(ls_merge[[i]]$twl$tFirst,
+                                ls_merge[[i]]$twl$tSecond))
+  
+  Rise <- c(
+    ifelse(ls_merge[[i]]$twl$type == 1, TRUE, FALSE),
+    ifelse(ls_merge[[i]]$twl$type == 1, FALSE, TRUE)
+  )
+  
+  Site <- ls_merge[[i]]$site
+  
+  twlProc4[[i]] <- data.frame(Twilight = Twilight_back,
+                              Rise     = Rise,
+                              Site     = rep(Site, 2))
+  
+  twlProc4[[i]] <- twlProc4[[i]][!duplicated(twlProc4[[i]]$Twilight), ]
+  twlProc4[[i]] <- twlProc4[[i]][order(twlProc4[[i]]$Twilight), ]
+  
+  grouped_twl[[i]] <- rep(FALSE, nrow(twlProc4[[i]]))
+  grouped_twl[[i]][twlProc4[[i]]$Site > 0] <- TRUE
+  
+  initalGroups <- makeGroups(grouped_twl[[i]])
+  
+  # Add groups back to twl file
+  twlProc4[[i]]$group <- initalGroups
+}
+
+behavior <- stationary <- sitenum <- vector('list', (nBirds + 1))
+for (i in 1:(nBirds + 1)) {
+  # Add behavior vector
+  behave <- c()
+  for (j in 1:max(twlProc4[[i]]$group)) {
+    behave <- c(behave, which(twlProc4[[i]]$group == j)[1])
+  }
+  
+  stationary[[i]] <- grouped_twl[[i]][behave]
+  sitenum[[i]] <- cumsum(stationary[[i]] == T)
+  sitenum[[i]][stationary[[i]] == F] <- 0
+}
+```
+
+```{r}
+############################################################################
+
+## ----setTols-------------------------------------------------------------
+tolvalues <- array(NA, c((nBirds + 1), 2))
+tolvalues[, 1] <- 0
+tolvalues[, 2] <- 0.08
+
+# Manual adjustments for Fall Equinox period
+tolvalues[1, 1] <- 0.13
+tolvalues[2, 1] <- 0.101
+tolvalues[3, 1] <- 0.2
+tolvalues[4, 1] <- 0.17
+tolvalues[5, 1] <- 0.22
+tolvalues[6, 1] <- 0.2
+tolvalues[7, 1] <- 0.168
+tolvalues[8, 1] <- 0.195
+tolvalues[9, 1] <- 0.105
+tolvalues[10, 1] <- 0.2
+tolvalues[11, 1] <- 0.115
+tolvalues[12, 1] <- 0.13
+tolvalues[13, 1] <- 0.165
+tolvalues[14, 1] <- 0.185
+tolvalues[15, 1] <- 0.215
+tolvalues[16, 1] <- 0.2
+tolvalues[17, 1] <- 0.23
+
+# Manual adjustments for Spring Equinox period
+tolvalues[1, 2] <- 0.275
+tolvalues[2, 2] <- 0.239
+tolvalues[3, 2] <- 0.2
+tolvalues[4, 2] <- 0.23
+tolvalues[5, 2] <- 0.22
+tolvalues[6, 2] <- 0.27
+tolvalues[7, 2] <- 0.2285
+tolvalues[8, 2] <- 0.2
+tolvalues[9, 2] <- 0.2
+tolvalues[10, 2] <- 0.162
+tolvalues[11, 2] <- 0.188
+tolvalues[12, 2] <- 0.17
+tolvalues[13, 2] <- 0.22
+tolvalues[14, 2] <- 0.24
+tolvalues[15, 2] <- 0.2
+tolvalues[16, 2] <- 0.2
+tolvalues[17, 2] <- 0.22
+
+# devtools::install_github("MTHallworth/SGAT")
+library(SGAT)
+
+# Inital path
+path <- suppressWarnings(mapply(
+  x = twlProc4,
+  y = tolvalues,
+  FUN = function(x, y) {
+    thresholdPath(
+      twilight = x$Twilight,
+      rise = x$Rise,
+      #zenith = x$zenith,
+      zenith = AncZ,
+      tol = y
+    )
+  },
+  SIMPLIFY = FALSE
+))
+
+```
+
+```{r}
+for(i in 1:(nBirds + 1)) {
+  plot(path[[i]]$x[, 2] ~ path[[i]]$x[, 1], main = BirdId[i], pch = 19)
+  plot(Americas,
+       add = TRUE,
+       col = "gray60",
+       border = "white")
+  points(path[[i]]$x[, 2] ~ path[[i]]$x[, 1], pch = 19)
+  points(path[[i]]$x[, 2] ~ path[[i]]$x[, 1],
+         type = "l",
+         lty = 2,
+         lwd = 0.25)
+}
+
+```
+
+```{r}
+# Fixed Locations - I'm going to set the first 10 days as fixed -
+# this can be altered #
+
+x0 <- lapply(path, function(x) {
+  x$x
+})
+
+x0_group <- vector('list', (nBirds + 1))
+
+for (i in 1:(nBirds + 1)) {
+  x0_group[[i]] <-
+    cbind(
+      tapply(path[[i]]$x[, 1], 
+            INDEX = twlProc4[[i]]$group,
+            median, na.rm = TRUE),
+      tapply(path[[i]]$x[, 2], 
+             INDEX = twlProc4[[i]]$group,
+             median, na.rm = TRUE)
+    )
+}
+
+z0 <- lapply(x0, trackMidpts)
+z0_group <- lapply(x0_group, trackMidpts)
+```
+
+```{r}
+##############################################################################
+#
+#
+#                                Generating a mask 
+#
+#
+#############################################################################
+## Function to construct a land/sea mask
+## ------------------------------------------------------------------------
+## ------------------------------------------------------------------------
+# set xlim and ylim values need to span the range of your dataset
+xlim <- c(-170,-60)
+ylim <- c(-89, 90)
+
+abundance <- raster::raster("Spatial_Layers/OSFL_abundance.tif")
+binaryOSFL <- reclassify(abundance, matrix(
+  c(-1, 0.0001, 0,
+    0.0001, 20, 1),
+  byrow = TRUE,
+  nrow = 2,
+  ncol = 3
+))
+
+OliveDist <- rasterToPolygons(binaryOSFL, dissolve = TRUE)
+OliveDist <- OliveDist[2, ]
+
+STEMprob <- abundance#/cellStats(abundance,sum,na.rm = TRUE)
+
+STEMpts <- rasterToPoints(STEMprob)
+
+# STEMpts[STEMpts[,3]>0,3] <- 2
+```
+
+```{r}
+## ------------------------------------------------------------------------
+## Function to construct a land/sea mask
+distribution.mask <- function(xlim,
+                              ylim,
+                              res = c(0.25, 0.25),
+                              land = TRUE,
+                              shape,
+                              values = 1) {
+  r <- raster(
+    res = res,
+    xmn = xlim[1],
+    xmx = xlim[2],
+    ymn = ylim[1],
+    ymx = ylim[2],
+    crs = proj4string(shape)
+  )
+  r <-
+    cover(
+      rasterize(
+        shape,
+        shift = c(-360, 0),
+        r,
+        values,
+        silent = TRUE
+      ),
+      rasterize(shape, r, values, silent = TRUE),
+      rasterize(elide(shape,
+                      shift = c(360, 0)), r, values, silent = TRUE)
+    )
+  #r <- as.matrix(is.na(r))[nrow(r):1, ]
+  r <- as.matrix(r)[nrow(r):1, ]
+  #if (land)
+  # r <- !r
+  xbin <- seq(xlim[1], xlim[2], length = ncol(r) + 1)
+  ybin <- seq(ylim[1], ylim[2], length = nrow(r) + 1)
+  
+  function(p) {
+    r[cbind(.bincode(p[, 2], ybin), .bincode(p[, 1], xbin))]
+  }
+}
+
+## ------------------------------------------------------------------------
+## Define mask for OSFL
+STEMmask <-
+  distribution.mask(
+    shape = SpatialPoints(cbind(STEMpts[, 1:2])),
+    values = STEMpts[, 3],
+    xlim = xlim,
+    ylim = ylim,
+    res = c(0.25, 0.25)
+  )
+
+
+## ------------------------------------------------------------------------
+log.prior <- function(p) {
+  f <- STEMmask(p)
+  ifelse(is.na(f) | f == 0, -1000, f)
+}
+```
+
+```{r, eval = FALSE, echo = FALSE}
+## ------------------------------------------------------------------------
+## Function to construct a land/sea mask
+distribution.mask <- function(xlim,
+                              ylim,
+                              res = c(0.25, 0.25),
+                              land = TRUE,
+                              shape,
+                              index,
+                              values = 1) {
+  r <- raster(
+    res = res,
+    xmn = xlim[1],
+    xmx = xlim[2],
+    ymn = ylim[1],
+    ymx = ylim[2],
+    crs = proj4string(shape)
+  )
+  
+  r.stationary <-
+    cover(
+      rasterize(
+        shape,
+        shift = c(-360, 0),
+        r,
+        values,
+        silent = TRUE
+      ),
+      rasterize(shape, r, values, silent = TRUE),
+      rasterize(elide(shape, shift = c(360, 0)), r, values, silent = TRUE)
+    )
+  
+  r.move <-
+    cover(
+      rasterize(
+        shape,
+        shift = c(-360, 0),
+        r,
+        values,
+        silent = TRUE
+      ),
+      rasterize(shape, r, values, silent = TRUE),
+      rasterize(elide(shape, shift = c(360, 0)), r, 1, silent = TRUE)
+    )
+  
+  dist.mask <- stack(r.stationary, r.move)
+  
+  xbin = seq(xmin(dist.mask), xmax(dist.mask), length = ncol(dist.mask) +
+               1)
+  ybin = seq(ymin(dist.mask), ymax(dist.mask), length = nrow(dist.mask) +
+               1)
+  dist.mask = as.array(dist.mask)[nrow(dist.mask):1, , sort(unique(dist.mask)), drop =
+                                    FALSE]
+  
+  function(p) {
+    dist.mask[cbind(.bincode(p[, 2], ybin), .bincode(p[, 1], xbin), index)]
+  }
+  
+}
+```
+
+```{r, eval = FALSE}
+###############################################################################
+###############################################################################
+#
+#
+#                                 Fit the inital  model
+#
+#
+##############################################################################
+##############################################################################
+
+FIT <- vector('list', (nBirds + 1))
+
+names(FIT) <- c(BirdId, paste0(BirdId[4], "yr2"))
+
+data(wrld_simpl)
+
+# Here you can set the number of iterations to run - 5000 or so
+# and the number of samples to thin
+niters = 1000
+nthin = 5
+
+for (i in 1:(nBirds + 1)) {
+  cat("Creating mask for bird ", BirdId[i], ".........\n")
+
+  
+  cat("Starting analysis for bird # ", i, " ", BirdId[i], "\n")
+  #model <- groupedThresholdModel(twilight = twlProc4[[i]]$Twilight,
+  model <- thresholdModel(
+    twilight = twlProc4[[i]]$Twilight,
+    rise = twlProc4[[i]]$Rise,
+    #group = twlProc4[[i]]$group,
+    twilight.model = "ModifiedLogNormal",
+    alpha = ALPHA,
+    # beta = c(2.0, 0.1),
+    beta = c(0.7, 0.02),
+    x0 = x0[[i]],
+    # path
+    #x0 = x0_group[[i]],
+    z0 = z0[[i]],
+    # middle points between the x0 points
+    #z0 = z0_group[[i]],
+    zenith = AncZ,
+    logp.x = log.prior
+  )
+  
+  # define the error shape
+  x.proposal <-
+    mvnorm(S = diag(c(0.0025, 0.0025)), n = nlocation(model$x0))
+  z.proposal <-
+    mvnorm(S = diag(c(0.0025, 0.0025)), n = nlocation(model$z0))
+  
+  cat("Running first model for ", BirdId[i], ".........\n")
+  
+  # Fit the model
+  fit <-
+    SGAT::estelleMetropolis(
+      model,
+      x.proposal,
+      z.proposal,
+      iters = niters,
+      thin = nthin,
+      chains = 3
+    )
+  
+  zsum <- locationSummary(fit$z)
+  xsum <- locationSummary(fit$x)
+  
+  proposal.x <- mvnorm(S = diag(c(0.0025, 0.0025)),
+                       n = nlocation(cbind(xsum$'Lon.50%', xsum$'Lat.50%')))
+  proposal.z <- mvnorm(S = diag(c(0.0025, 0.0025)),
+                       n = nlocation(cbind(zsum$'Lon.50%', zsum$'Lat.50%')))
+  
+  cat("Fine tuning the model for ", BirdId[i], ".........\n")
+  
+  fit <- estelleMetropolis(
+    model = model,
+    proposal.x = proposal.x,
+    proposal.z = proposal.z,
+    x0 = cbind(xsum$'Lon.50%', xsum$'Lat.50%'),
+    z0 = cbind(zsum$'Lon.50%', zsum$'Lat.50%'),
+    iters = niters,
+    # This value sets the number of iterations to run
+    thin = nthin,
+    chains = 3
+  )
+  
+  
+  zsum <- locationSummary(fit$z)
+  xsum <- locationSummary(fit$x)
+  
+  proposal.x <- mvnorm(S = diag(c(0.0025, 0.0025)),
+                       n = nlocation(cbind(xsum$'Lon.50%', xsum$'Lat.50%')))
+  proposal.z <- mvnorm(S = diag(c(0.0025, 0.0025)),
+                       n = nlocation(cbind(zsum$'Lon.50%', zsum$'Lat.50%')))
+  
+  cat("Running final model for ", BirdId[i], ".........\n")
+  
+  # Note the increase in number of interations - this takes a bit longer to run
+  FIT[[i]] <- estelleMetropolis(
+    model = model,
+    proposal.x = mvnorm(chainCov(fit$x), s = 0.1),
+    proposal.z = mvnorm(chainCov(fit$z), s = 0.1),
+    x0 = cbind(xsum$'Lon.50%', xsum$'Lat.50%'),
+    z0 = cbind(zsum$'Lon.50%', zsum$'Lat.50%'),
+    iters = niters,
+    # This value sets the number of iterations to run
+    thin = nthin,
+    chains = 3
+  )
+  cat("\n\n\n")
+}
+
+# saveRDS(FIT, file = "D:/OSFL_Geolocator/osfl_fit_Mar_2021_AbundancePrior_AncZenith.rds")
+```
+
+# Export daily data for movebank
+
+```{r}
+FIT <-
+  readRDS("G:/OSFL/osfl_fit_Feb_2021_AbundancePrior_AncZenith.rds")
+
+# BirdId <- c(BirdId, "K288_yr2")
+
+movebank <- vector('list', (nBirds + 1))
+for (i in 1:(nBirds + 1)) {
+  movebank[[i]] <-
+    SGAT2Movebank(FIT[[i]]$z, time = FIT[[i]]$model$time)
+  movebank[[i]]$TagID <- BirdId[i]
+}
+
+# write.csv(do.call('rbind', movebank),row.names = FALSE, "F:/OSFL/movebank_export_Mar24_2021.csv")
+```
+
+```{r}
+saveRDS(FIT, paste0("OSFL_",Sys.Date()))
+```
